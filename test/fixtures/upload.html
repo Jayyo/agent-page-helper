@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Attachments</title>
+<style>
+  body { font: 15px/1.4 system-ui, sans-serif; margin: 2rem; }
+  .uploader { border: 1px solid #aaa; padding: 1rem; width: 420px; }
+  .uploader input[type=file] { position: absolute; left: -9999px; }
+</style>
+</head>
+<body>
+<h1>Submit report</h1>
+<!--
+  Mimics widget libraries that do not ship an <input type=file> in the markup.
+  ?mode=chooser  the button appends an input and opens the file dialog (input.click())
+  ?mode=lazy     the button only appends a hidden input and waits; no dialog, no filechooser event
+  ?mode=detached the button opens the dialog from an input that is never attached to the DOM
+-->
+<div class="uploader" id="uploader">
+  <button type="button" id="browse">Browse files</button>
+  <ul id="files"></ul>
+</div>
+<p><button type="button" id="broken">Attach later</button></p>
+<script>
+  const mode = new URLSearchParams(location.search).get('mode') || 'chooser';
+  window.__changes = 0;
+  function makeInput() {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.name = 'attachment';
+    input.addEventListener('change', () => {
+      window.__changes++;
+      const list = document.getElementById('files');
+      list.textContent = '';
+      for (const f of input.files) {
+        const li = document.createElement('li');
+        li.textContent = f.name + ' (' + f.size + ' bytes)';
+        list.appendChild(li);
+      }
+      window.__result = { files: [...input.files].map((f) => f.name) };
+    });
+    return input;
+  }
+  let attached = null;
+  document.getElementById('browse').addEventListener('click', () => {
+    if (mode === 'detached') { makeInput().click(); return; }
+    if (!attached) { attached = makeInput(); document.getElementById('uploader').appendChild(attached); }
+    if (mode === 'chooser') attached.click();
+  });
+  // A button that looks like an upload trigger but does nothing.
+  document.getElementById('broken').addEventListener('click', () => {});
+</script>
+</body>
+</html>

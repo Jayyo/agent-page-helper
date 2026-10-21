@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Profile settings</title>
+<style>
+  body { font: 15px/1.4 system-ui, sans-serif; margin: 2rem; }
+  label { display: block; margin: .8rem 0 .2rem; }
+  .spacer { height: 380px; }
+  .consent {
+    position: fixed; left: 0; right: 0; bottom: 0; height: 300px;
+    background: rgba(20, 20, 20, .92); color: #fff; padding: 1.5rem;
+  }
+</style>
+</head>
+<body>
+<h1>Profile settings</h1>
+<label for="display">Display name</label>
+<input id="display" value="Mina">
+<div class="spacer"></div>
+<button type="button" id="save">Save changes</button>
+<p id="saved" role="status"></p>
+
+<div class="consent" id="consent">
+  <p>We use cookies to keep you signed in.</p>
+  <button type="button" id="accept">Accept all</button>
+</div>
+
+<script>
+  document.getElementById('save').addEventListener('click', (e) => {
+    window.__result = { saved: true, trusted: e.isTrusted };
+    document.getElementById('saved').textContent = 'Saved';
+  });
+  document.getElementById('accept').addEventListener('click', () => {
+    document.getElementById('consent').remove();
+  });
+</script>
+</body>
+</html>

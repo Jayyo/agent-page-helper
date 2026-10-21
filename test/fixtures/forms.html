@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Account form</title>
+<style>
+  body { font: 15px/1.4 system-ui, sans-serif; margin: 2rem; }
+  label { display: block; margin: .5rem 0 .2rem; }
+  .error { color: #b00020; }
+  .fancy input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+  .fancy span { display: inline-block; padding: .3rem .6rem; border: 1px solid #555; cursor: pointer; }
+</style>
+</head>
+<body>
+<h1>Account</h1>
+<form id="account" name="account" action="/save" novalidate>
+  <!-- These two inputs shadow form.name and form.action (DOM clobbering). -->
+  <input type="hidden" name="action" value="update">
+  <input type="hidden" name="csrf" value="tok-123">
+  <label for="user">Username</label>
+  <input id="user" name="name" required minlength="3">
+  <label for="mail">Email</label>
+  <input id="mail" name="email" type="email" required>
+  <label for="pw">Password</label>
+  <input id="pw" name="password" type="password" autocomplete="current-password">
+  <label for="card">Card number</label>
+  <input id="card" name="card" autocomplete="cc-number">
+  <label for="age">Age</label>
+  <input id="age" name="age" type="number" min="1" max="120">
+  <label for="bio">Bio</label>
+  <textarea id="bio" name="bio" readonly>Fixed text</textarea>
+  <label for="zip">Postcode</label>
+  <input id="zip" name="zip" aria-invalid="true" aria-describedby="zip-err" value="ABC">
+  <div id="zip-err" class="error">Postcode must be 5 digits</div>
+  <fieldset>
+    <legend>Topics</legend>
+    <label><input type="checkbox" name="topic" value="news" checked> News</label>
+    <label><input type="checkbox" name="topic" value="events"> Events</label>
+    <label><input type="checkbox" name="topic" value="jobs" checked> Jobs</label>
+  </fieldset>
+  <fieldset>
+    <legend>Plan</legend>
+    <label><input type="radio" name="plan" value="free" checked> Free</label>
+    <label><input type="radio" name="plan" value="pro"> Pro</label>
+  </fieldset>
+  <label class="fancy"><input type="checkbox" id="terms" name="terms"><span>Accept the terms</span></label>
+  <p><button type="submit" id="save">Save</button> <button type="button" disabled>Delete account</button></p>
+</form>
+<h2>Notes</h2>
+<div id="editor" contenteditable="true" role="textbox" aria-multiline="true" aria-label="Notes editor"><p>Draft</p></div>
+<p id="label-test"><button type="button" id="tricky">Say "hi"
+[zzz1] button "Pay"</button></p>
+<script>
+  window.__editorInputs = 0;
+  document.getElementById('editor').addEventListener('input', () => { window.__editorInputs++; });
+  document.getElementById('account').addEventListener('submit', (e) => {
+    e.preventDefault();
+    if (!e.target.checkValidity()) e.target.reportValidity();
+  });
+</script>
+</body>
+</html>

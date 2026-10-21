@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Daily Ledger: City council approves transit budget</title>
+<style>
+  body { font: 15px/1.5 Georgia, serif; margin: 0; }
+  header, footer { background: #f2f2f2; padding: .5rem 1rem; }
+  nav a { margin-right: .6rem; font: 13px system-ui, sans-serif; }
+  .mega { display: none; }
+  .layout { display: grid; grid-template-columns: 220px 1fr 260px; gap: 1rem; padding: 1rem; }
+  .card { cursor: pointer; border: 1px solid #ddd; padding: .4rem; margin-bottom: .4rem; font: 13px system-ui, sans-serif; }
+  .comment { border-top: 1px solid #eee; padding: .4rem 0; }
+  .icon { width: 28px; height: 28px; }
+</style>
+</head>
+<body>
+<header>
+  <a href="/" aria-label="Daily Ledger home">Daily Ledger</a>
+  <nav id="topnav" aria-label="Sections"></nav>
+  <div class="mega" id="mega"></div>
+  <form role="search" action="/search"><input type="search" name="q" placeholder="Search news"><button>Search</button></form>
+</header>
+<div class="layout">
+  <aside id="left" aria-label="Trending"></aside>
+  <main>
+    <article id="article">
+      <h1>City council approves transit budget after late-night session</h1>
+      <p><button class="icon" aria-label="Share"></button><button class="icon" aria-label="Bookmark"></button><button class="icon" aria-label="Print"></button></p>
+    </article>
+    <section id="comments" aria-label="Comments"><h2>Comments</h2></section>
+  </main>
+  <aside id="right" aria-label="More stories"></aside>
+</div>
+<footer id="footer"></footer>
+<script>
+  // Deterministic filler so every run measures the same DOM.
+  let seed = 7;
+  const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  const words = ('council budget transit city vote members late session approved plan funding route bus rail ' +
+    'residents meeting public report mayor district service fares station board review proposal costs year ' +
+    'schedule riders support opposed amendment hearing downtown express capital project commute agency').split(' ');
+  const sentence = (n) => {
+    const w = Array.from({ length: n }, () => words[Math.floor(rnd() * words.length)]);
+    w[0] = w[0][0].toUpperCase() + w[0].slice(1);
+    return w.join(' ') + '.';
+  };
+  const para = () => Array.from({ length: 4 + Math.floor(rnd() * 4) }, () => sentence(8 + Math.floor(rnd() * 10))).join(' ');
+  const link = (text, href) => Object.assign(document.createElement('a'), { textContent: text, href });
+
+  const sections = ['World', 'Politics', 'Business', 'Tech', 'Science', 'Health', 'Sports', 'Culture', 'Opinion', 'Travel', 'Food', 'Weather'];
+  const nav = document.getElementById('topnav');
+  sections.forEach((s) => nav.appendChild(link(s, '/' + s.toLowerCase())));
+  const mega = document.getElementById('mega');
+  sections.forEach((s) => { for (let i = 0; i < 8; i++) mega.appendChild(link(s + ' topic ' + (i + 1), '/' + s.toLowerCase() + '/' + i)); });
+
+  const left = document.getElementById('left');
+  left.appendChild(Object.assign(document.createElement('h2'), { textContent: 'Trending' }));
+  for (let i = 0; i < 40; i++) {
+    const card = document.createElement('div');
+    card.className = 'card';
+    card.innerHTML = '<span>' + sentence(6) + '</span> <small>' + (i + 2) + 'h ago</small>';
+    card.addEventListener('click', () => { location.hash = 'trend-' + i; });
+    left.appendChild(card);
+  }
+
+  const article = document.getElementById('article');
+  for (let i = 0; i < 24; i++) {
+    if (i % 6 === 5) article.appendChild(Object.assign(document.createElement('h2'), { textContent: sentence(5).replace('.', '') }));
+    article.appendChild(Object.assign(document.createElement('p'), { textContent: para() }));
+  }
+  const ad = document.createElement('iframe');
+  ad.title = 'Advertisement';
+  ad.srcdoc = '<p style="font:12px sans-serif">Sponsored</p><a href="/ad/1">Try Transit Plus free for 30 days</a><button>Close ad</button>';
+  ad.style.cssText = 'width:300px;height:90px;border:0';
+  article.appendChild(ad);
+
+  const comments = document.getElementById('comments');
+  for (let i = 0; i < 30; i++) {
+    const c = document.createElement('div');
+    c.className = 'comment';
+    c.innerHTML = '<strong>reader' + (100 + i) + '</strong> <p></p>' +
+      '<button type="button">Reply</button> <button type="button" aria-label="Like comment">+1</button> <button type="button">Report</button>';
+    c.querySelector('p').textContent = sentence(12 + Math.floor(rnd() * 12));
+    comments.appendChild(c);
+  }
+  comments.appendChild(Object.assign(document.createElement('button'), { textContent: 'Load more comments' }));
+
+  const right = document.getElementById('right');
+  right.appendChild(Object.assign(document.createElement('h2'), { textContent: 'More stories' }));
+  for (let i = 0; i < 25; i++) {
+    const p = document.createElement('p');
+    p.appendChild(link(sentence(7).replace('.', ''), '/story/' + (1000 + i)));
+    right.appendChild(p);
+  }
+
+  const footer = document.getElementById('footer');
+  ['About', 'Careers', 'Contact', 'Advertise', 'Privacy', 'Terms', 'Cookies', 'Accessibility', 'Newsletters', 'RSS'].forEach((t) => footer.appendChild(link(t, '/' + t.toLowerCase())));
+  sections.forEach((s) => footer.appendChild(link(s + ' archive', '/archive/' + s.toLowerCase())));
+</script>
+</body>
+</html>

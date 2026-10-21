@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Embedded widget (cross-origin)</title>
+<style>
+  body { font: 15px/1.4 system-ui, sans-serif; margin: 2rem; }
+  iframe { width: 520px; height: 180px; border: 1px solid #999; }
+</style>
+</head>
+<body>
+<h1>Checkout</h1>
+<p>The promotions widget below is served from a different origin.</p>
+<iframe id="widget" title="Promotions"></iframe>
+<script>
+  // Same server, other hostname: 127.0.0.1 <-> localhost are different origins.
+  const other = location.hostname === 'localhost' ? '127.0.0.1' : 'localhost';
+  document.getElementById('widget').src = `${location.protocol}//${other}:${location.port}/frames/inner.html`;
+  // The inner page reports through postMessage because it cannot touch window.top here.
+  window.addEventListener('message', (e) => { if (e.data && e.data.coupon) window.__result = e.data; });
+</script>
+</body>
+</html>

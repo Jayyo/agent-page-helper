@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Reports</title>
+<style>body { font: 15px/1.4 system-ui, sans-serif; margin: 2rem; }</style>
+</head>
+<body>
+<h1>Reports</h1>
+<p><button type="button" id="open">Open report</button></p>
+<p><a href="report.html?id=7" target="_blank" id="link">Report 7 (new tab)</a></p>
+<p id="out" role="status"></p>
+<script>
+  document.getElementById('open').addEventListener('click', () => {
+    const w = window.open('report.html?id=42', 'report');
+    document.getElementById('out').textContent = w ? 'opened' : 'blocked';
+  });
+</script>
+</body>
+</html>

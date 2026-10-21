@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Checkout</title>
+<style>
+  body { font: 14px/1.4 system-ui, sans-serif; margin: 1rem; }
+  iframe { width: 480px; height: 160px; border: 1px dashed #999; }
+</style>
+</head>
+<body>
+<h2>Payment</h2>
+<label>Card holder <input name="holder" autocomplete="cc-name"></label>
+<label>Delivery <select name="delivery"><option>Standard</option><option>Express</option></select></label>
+<label>Notes <textarea name="notes" rows="2"></textarea></label>
+<iframe src="inner.html" title="Promotions"></iframe>
+</body>
+</html>

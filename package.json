@@ -61,5 +61,13 @@
     "playwright-core": {
       "optional": true
     }
+  },
+  "scripts": {
+    "test": "node --test \"test/*.test.js\""
+  },
+  "devDependencies": {
+    "playwright": "1.64.1",
+    "react": "18.3.1",
+    "react-dom": "18.3.1"
   }
 }

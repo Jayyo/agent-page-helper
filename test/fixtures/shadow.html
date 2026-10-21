@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Web components</title>
+<style>body { font: 15px/1.4 system-ui, sans-serif; margin: 2rem; }</style>
+</head>
+<body>
+<h1>Newsletter</h1>
+<signup-box id="open-box"></signup-box>
+<sealed-box id="closed-box"></sealed-box>
+<script>
+  const markup = (label) => `
+    <style>:host { display: block; border: 1px solid #ccc; padding: .8rem; margin: .5rem 0; width: 360px; }</style>
+    <label for="addr">${label}</label> <input id="addr" type="email">
+    <button type="button" id="join">Subscribe</button>
+    <p id="out" role="status"></p>`;
+  function wire(root, key) {
+    root.getElementById('join').addEventListener('click', () => {
+      const v = root.getElementById('addr').value;
+      root.getElementById('out').textContent = 'Subscribed ' + v;
+      window.__result = Object.assign(window.__result || {}, { [key]: v });
+    });
+  }
+  customElements.define('signup-box', class extends HTMLElement {
+    connectedCallback() { const r = this.attachShadow({ mode: 'open' }); r.innerHTML = markup('Work email'); wire(r, 'open'); }
+  });
+  customElements.define('sealed-box', class extends HTMLElement {
+    connectedCallback() { const r = this.attachShadow({ mode: 'closed' }); r.innerHTML = markup('Personal email'); wire(r, 'closed'); }
+  });
+</script>
+</body>
+</html>

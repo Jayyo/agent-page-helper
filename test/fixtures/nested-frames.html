@@ -1,0 +1,16 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Nested same-origin frames</title>
+<style>
+  body { font: 15px/1.4 system-ui, sans-serif; margin: 2rem; }
+  iframe { width: 560px; height: 300px; border: 1px solid #999; }
+</style>
+</head>
+<body>
+<h1>Order summary</h1>
+<p>Subtotal: $42.00</p>
+<iframe src="frames/outer.html" title="Checkout"></iframe>
+</body>
+</html>

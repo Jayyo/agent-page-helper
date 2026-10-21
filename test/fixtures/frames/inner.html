@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Promotions</title>
+<style>body { font: 14px/1.4 system-ui, sans-serif; margin: 1rem; }</style>
+</head>
+<body>
+<label for="coupon">Coupon code</label>
+<input id="coupon" name="coupon" maxlength="12">
+<button type="button" id="apply">Apply</button>
+<p id="status" role="status"></p>
+<script>
+  document.getElementById('apply').addEventListener('click', () => {
+    const code = document.getElementById('coupon').value.trim();
+    document.getElementById('status').textContent = code ? 'Applied ' + code : 'Enter a code';
+    if (!code) return;
+    try { window.top.__result = { coupon: code }; }
+    catch (e) { window.top.postMessage({ coupon: code }, '*'); }
+  });
+</script>
+</body>
+</html>

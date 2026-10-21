@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Lesson</title></head>
+<body style="font: 15px/1.4 system-ui, sans-serif; margin: 1.5rem">
+<h1>Lesson 1: Safety basics</h1>
+<p>Read the summary, confirm, then continue.</p>
+<label><input type="checkbox" id="ack"> I have read this lesson</label>
+<p><button type="button" id="next">Next lesson</button></p>
+<p id="msg" role="status"></p>
+<script>
+  document.getElementById('next').addEventListener('click', () => {
+    const ok = document.getElementById('ack').checked;
+    document.getElementById('msg').textContent = ok ? 'Lesson 1 completed' : 'Please confirm first';
+    if (ok) window.top.__result = { completed: 1 };
+  });
+</script>
+</body>
+</html>
