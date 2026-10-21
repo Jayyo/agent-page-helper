@@ -1,0 +1,11 @@
+{
+  "name": "agent-page-helper",
+  "version": "0.1.0",
+  "description": "Page-side helper for LLM browser agents",
+  "license": "MIT",
+  "author": "Jay Cho",
+  "main": "lib/upload.js",
+  "bin": {
+    "cdp-probe": "bin/cdp-probe.js"
+  }
+}
