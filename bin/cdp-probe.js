@@ -1,36 +1,76 @@
 #!/usr/bin/env node
-// Probe every page target of a CDP endpoint with a short Runtime.evaluate.
-// A target that prints TIMEOUT has a frozen renderer (print preview, native dialog,
-// hung viewer) and can block connectOverCDP for every command. Close that one
-// target instead of restarting the browser.
-// Usage: cdp-probe [endpoint=http://127.0.0.1:9222] [timeoutMs=5000]
-const endpoint = (process.argv[2] || 'http://127.0.0.1:9222').replace(/\/$/, '');
-const tmo = parseInt(process.argv[3] || '5000', 10);
+'use strict';
+const { probeTargets, closeTarget } = require('../cdp.js');
 
-async function getTargets() {
-  const res = await fetch(`${endpoint}/json/list`);
-  return res.json();
-}
-function probe(t) {
-  return new Promise((res) => {
-    const ws = new WebSocket(t.webSocketDebuggerUrl);
-    const timer = setTimeout(() => { try { ws.close(); } catch (e) {} res('TIMEOUT'); }, tmo);
-    ws.onopen = () => ws.send(JSON.stringify({ id: 1, method: 'Runtime.evaluate', params: { expression: 'location.href', returnByValue: true } }));
-    ws.onmessage = (ev) => { const m = JSON.parse(ev.data); if (m.id === 1) { clearTimeout(timer); ws.close(); res('ok'); } };
-    ws.onerror = () => { clearTimeout(timer); res('WS_ERR'); };
-  });
-}
-(async () => {
-  const targets = await getTargets();
-  const pages = targets.filter((t) => t.type === 'page');
-  let bad = 0;
-  for (const t of pages) {
-    const r = await probe(t);
-    if (r !== 'ok') bad++;
-    console.log(`${r.padEnd(7)} ${t.id} ${(t.title || '').slice(0, 28).padEnd(28)} ${t.url.slice(0, 70)}`);
+const USAGE = `usage: cdp-probe [--endpoint URL] [--timeout MS] [--json] [--close TARGET_ID]
+
+Sends a trivial Runtime.evaluate to every page target of a Chromium DevTools
+endpoint and reports which ones answer. One target that does not answer (print
+preview, a stuck PDF viewer, a page spinning in JS) can make connectOverCDP
+hang for every command. A timeout can also be a debugger pause or a busy page,
+so this only reports; closing a target is up to you (--close).
+
+  --endpoint URL   DevTools HTTP endpoint (default: $CDP_ENDPOINT or http://127.0.0.1:9222)
+  --timeout MS     per-target timeout in ms (default 3000)
+  --json           print JSON instead of a table
+  --close ID       close the target with this id, then exit
+
+exit status: 0 all targets answered, 1 some did not, 2 endpoint unreachable or bad arguments`;
+
+function parse(argv) {
+  const opts = { endpoint: undefined, timeout: 3000, json: false, close: null };
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i];
+    const value = () => {
+      const v = argv[++i];
+      if (v === undefined) throw new Error(`${a} needs a value`);
+      return v;
+    };
+    if (a === '--endpoint') opts.endpoint = value();
+    else if (a === '--timeout') opts.timeout = Number(value());
+    else if (a === '--json') opts.json = true;
+    else if (a === '--close') opts.close = value();
+    else if (a === '-h' || a === '--help') opts.help = true;
+    else throw new Error(`unknown argument: ${a}`);
   }
-  const printTargets = targets.filter((t) => /^chrome(-untrusted)?:\/\/print/.test(t.url));
-  if (printTargets.length) console.log(`\nprint-preview targets present: ${printTargets.map((t) => t.id).join(', ')} -> curl ${endpoint}/json/close/<id>`);
-  console.log(bad ? `\n${bad} unresponsive page(s). Close them with: curl -s ${endpoint}/json/close/<id>` : '\nall pages responsive; the hang is not a frozen tab');
-  process.exit(bad ? 1 : 0);
-})().catch((e) => { console.error('ERR', e.message); process.exit(2); });
+  if (!Number.isInteger(opts.timeout) || opts.timeout < 1 || opts.timeout > 2147483647) throw new Error('--timeout must be a whole number of milliseconds');
+  return opts;
+}
+
+// Page titles and URLs come from the pages; keep terminal control sequences out.
+const printable = (s) => String(s || '').replace(/[\u0000-\u001f\u007f-\u009f]/g, '');
+
+async function main() {
+  let opts;
+  try {
+    opts = parse(process.argv.slice(2));
+  } catch (e) {
+    console.error(`${e.message}\n\n${USAGE}`);
+    return 2;
+  }
+  if (opts.help) { console.log(USAGE); return 0; }
+  if (opts.close) {
+    const ok = await closeTarget(opts.endpoint, opts.close, { timeout: opts.timeout });
+    console.log(ok ? `closed ${opts.close}` : `could not close ${opts.close} (unknown id, or still listed after ${opts.timeout} ms)`);
+    return ok ? 0 : 1;
+  }
+  const results = await probeTargets(opts.endpoint, { timeout: opts.timeout });
+  const bad = results.filter((r) => r.status !== 'responsive');
+  if (opts.json) {
+    console.log(JSON.stringify(results, null, 2));
+  } else {
+    for (const r of results) {
+      const note = r.printPreview ? ' [print preview]' : '';
+      console.log(`${r.status.padEnd(12)} ${String(r.ms).padStart(5)}ms  ${printable(r.id)}  ${printable(r.title).slice(0, 30).padEnd(30)}  ${printable(r.url).slice(0, 80)}${note}`);
+    }
+    if (!results.length) console.log('no page targets');
+    else if (bad.length) console.log(`\n${bad.length} target(s) did not answer. Close one with: cdp-probe${opts.endpoint ? ` --endpoint ${printable(opts.endpoint)}` : ''} --close <id>`);
+    else console.log('\nall page targets answered');
+  }
+  return bad.length ? 1 : 0;
+}
+
+main().then((code) => { process.exitCode = code; }, (e) => {
+  console.error(`cdp-probe: ${e.cause ? e.cause.message || e.message : e.message}`);
+  process.exitCode = 2;
+});

@@ -31,6 +31,10 @@
       "types": "./playwright.d.ts",
       "default": "./playwright.js"
     },
+    "./cdp": {
+      "types": "./cdp.d.ts",
+      "default": "./cdp.js"
+    },
     "./agent-page-helper.user.js": "./agent-page-helper.user.js",
     "./package.json": "./package.json"
   },
@@ -43,6 +47,8 @@
     "index.d.ts",
     "playwright.js",
     "playwright.d.ts",
+    "cdp.js",
+    "cdp.d.ts",
     "bin/"
   ],
   "engines": {
