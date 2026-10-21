@@ -2,294 +2,970 @@
 // @name         Agent Page Helper
 // @namespace    https://github.com/Jayyo/agent-page-helper
 // @version      0.1.0
-// @description  Page-side helper for LLM browser agents: compact snapshots, stable element ids, controlled-input fill, occlusion checks, frame traversal.
+// @description  Page-side snapshots and DOM actions for LLM browser agents: compact element lists with refs, controlled-input fill, occlusion checks, same-origin frame traversal.
 // @author       Jay Cho
+// @homepageURL  https://github.com/Jayyo/agent-page-helper
+// @license      MIT
 // @match        *://*/*
 // @grant        none
 // @run-at       document-start
 // ==/UserScript==
+//
+// The same file is a userscript and a plain script: inject it with
+// context.addInitScript({ path }) or evaluate its source in any JS channel.
+// It defines window.__aph__ and does nothing else until you call it:
+// no network, no storage, no attributes written into the DOM.
 
 (function () {
-    'use strict';
-    if (window.__aph__) return; // already injected (re-created frames, duplicate injection)
+  'use strict';
+  if (window.__aph__) return;
 
-    const CONFIG = {
-        MAX_INTERACTIVE_ELEMENTS: 100, MAX_TEXT_LENGTH: 50, MAX_CONTENT_LENGTH: 1000,
-        CACHE_TTL_MS: 500, MUTATION_DEBOUNCE_MS: 100, MAX_DOM_DEPTH: 50, MAX_FRAME_DEPTH: 10
+  const VERSION = '0.1.0';
+  const LIMITS = { elements: 100, headings: 40, live: 10, name: 60, value: 40, text: 400, frameDepth: 8, domDepth: 400 };
+
+  // ---------------------------------------------------------------- refs
+  // A ref is a per-document prefix plus a counter ("kqxz12"). The prefix is four
+  // random letters drawn on every page load, so a ref kept from a previous page
+  // fails (WRONG_DOCUMENT) instead of hitting whatever element got the same number
+  // on the new page; two loads share a prefix with odds of about 1 in 457,000.
+  const DOC = Array.from(crypto.getRandomValues(new Uint8Array(4)), (b) => String.fromCharCode(97 + (b % 26))).join('');
+  const REF_RE = /^[a-z]{4}\d+$/;
+  let counter = 0;
+  const refOf = new WeakMap();   // Element -> ref
+  const byRef = new Map();       // ref -> WeakRef<Element>
+
+  function refFor(el) {
+    let ref = refOf.get(el);
+    if (!ref) {
+      ref = DOC + (++counter);
+      refOf.set(el, ref);
+      if (byRef.size >= 5000 && counter % 1000 === 0) sweepRefs();
+    }
+    if (!byRef.has(ref)) byRef.set(ref, new WeakRef(el));
+    return ref;
+  }
+  function sweepRefs() {
+    for (const [ref, w] of byRef) { const el = w.deref(); if (!el || !el.isConnected) byRef.delete(ref); }
+  }
+  function fail(code, message, extra) {
+    return { ok: false, error: Object.assign({ code, message }, extra) };
+  }
+  function resolve(ref) {
+    if (typeof ref !== 'string' || !REF_RE.test(ref)) return fail('BAD_REF', `not a helper ref: ${String(ref).slice(0, 40)}`);
+    if (!ref.startsWith(DOC)) return fail('WRONG_DOCUMENT', `ref ${ref} is from another page load; take a new snapshot`);
+    const w = byRef.get(ref);
+    const el = w && w.deref();
+    if (!el || !el.isConnected) { byRef.delete(ref); return fail('STALE_REF', `ref ${ref} is no longer in the document`); }
+    return { ok: true, el };
+  }
+
+  // ---------------------------------------------------------------- small utils
+  const BIDI = /[\u200b-\u200f\u202a-\u202e\u2066-\u2069]/g;
+  function clean(s, max) {
+    if (s == null) return '';
+    s = String(s).replace(BIDI, '').replace(/\s+/g, ' ').trim();
+    return max && s.length > max ? s.slice(0, max - 1) + '…' : s;
+  }
+  // A <form> exposes its controls as properties ([LegacyOverrideBuiltIns]), so
+  // <input name="id"> or name="hidden" would shadow form.id or form.hidden. Read
+  // element state through the prototypes instead.
+  const EP = Element.prototype;
+  const getter = (proto, name) => Object.getOwnPropertyDescriptor(proto, name).get;
+  const TAG = getter(EP, 'tagName');
+  const SHADOW = getter(EP, 'shadowRoot');
+  const FIRST = getter(EP, 'firstElementChild');
+  const NEXT = getter(EP, 'nextElementSibling');
+  const FORM_ELEMENTS = getter(HTMLFormElement.prototype, 'elements');
+  function viewOf(el) { return el.ownerDocument.defaultView || window; }
+  function tagOf(el) { return TAG.call(el).toUpperCase(); }
+  function attr(el, name) { const v = EP.getAttribute.call(el, name); return v == null ? '' : v; }
+  function hasAttr(el, name) { return EP.hasAttribute.call(el, name); }
+  function classOf(el) { return attr(el, 'class'); }
+  function describe(el) {
+    if (!el || el.nodeType !== 1) return '';
+    const tag = tagOf(el).toLowerCase();
+    if (attr(el, 'id')) return `${tag}#${clean(attr(el, 'id'), 40)}`;
+    const cls = classOf(el).trim().split(/\s+/)[0];
+    return cls ? `${tag}.${clean(cls, 40)}` : tag;
+  }
+  // Like Node.contains, but also walks out of shadow roots.
+  function composedContains(outer, node) {
+    for (let n = node; n; n = n.parentNode || n.host) if (n === outer) return true;
+    return false;
+  }
+
+  // ---------------------------------------------------------------- roles, names, state
+  const INTERACTIVE_ROLES = new Set(['button', 'link', 'checkbox', 'radio', 'switch', 'tab', 'menuitem', 'menuitemcheckbox',
+    'menuitemradio', 'option', 'combobox', 'textbox', 'searchbox', 'slider', 'spinbutton', 'listbox', 'treeitem', 'gridcell']);
+  const INPUT_ROLES = { button: 'button', submit: 'button', reset: 'button', image: 'button', file: 'button',
+    checkbox: 'checkbox', radio: 'radio', range: 'slider', number: 'spinbutton', search: 'searchbox' };
+  const FILLABLE_TYPES = new Set(['', 'text', 'search', 'email', 'url', 'tel', 'password', 'number', 'date',
+    'datetime-local', 'month', 'week', 'time', 'color', 'range']);
+  const SKIP_TAGS = new Set(['SCRIPT', 'STYLE', 'TEMPLATE', 'NOSCRIPT', 'HEAD', 'META', 'LINK']);
+  const SECRET_AUTOCOMPLETE = /\b(current-password|new-password|one-time-code|cc-number|cc-csc|cc-exp(-month|-year)?)\b/i;
+
+  function roleOf(el) {
+    const explicit = attr(el, 'role').trim().split(/\s+/)[0];
+    if (explicit) return explicit;
+    switch (tagOf(el)) {
+      case 'A': case 'AREA': return hasAttr(el, 'href') ? 'link' : null;
+      case 'BUTTON': case 'SUMMARY': return 'button';
+      case 'SELECT': return el.multiple || el.size > 1 ? 'listbox' : 'combobox';
+      case 'TEXTAREA': return 'textbox';
+      case 'INPUT': return INPUT_ROLES[el.type] || 'textbox';
+      case 'H1': case 'H2': case 'H3': case 'H4': case 'H5': case 'H6': return 'heading';
+      case 'OUTPUT': return 'status';
+      case 'DIALOG': return 'dialog';
+      case 'IMG': return el.getAttribute('alt') === '' ? null : 'img';
+    }
+    return isEditableRoot(el) ? 'textbox' : null;
+  }
+  function isEditableRoot(el) {
+    return el.isContentEditable && !(el.parentElement && el.parentElement.isContentEditable);
+  }
+
+  // Text of a subtree for names: skips form controls (so a label that wraps a
+  // <select> does not swallow every option's text), follows <slot>s to their
+  // assigned nodes, and skips hidden parts unless `includeHidden` (aria-labelledby
+  // may point at hidden text).
+  function textOf(node, max = 200, includeHidden = false) {
+    let out = '';
+    const children = (n) => (tagOf(n) === 'SLOT' && n.assignedNodes({ flatten: true }).length ? n.assignedNodes({ flatten: true }) : Array.from(n.childNodes));
+    (function walk(n) {
+      for (const c of children(n)) {
+        if (out.length >= max) return;
+        if (c.nodeType === 3) out += c.nodeValue;
+        else if (c.nodeType === 1) {
+          if (SKIP_TAGS.has(tagOf(c)) || attr(c, 'aria-hidden') === 'true') continue;
+          if (tagOf(c) === 'SELECT' || tagOf(c) === 'TEXTAREA' || tagOf(c) === 'INPUT') continue;
+          if (!includeHidden && (hasAttr(c, 'hidden') || (c.checkVisibility && !c.checkVisibility({ visibilityProperty: true })))) continue;
+          if (tagOf(c) === 'IMG') { out += ' ' + attr(c, 'alt') + ' '; continue; }
+          walk(c);
+          if (tagOf(c) === 'BR' || tagOf(c) === 'P' || tagOf(c) === 'DIV' || tagOf(c) === 'LI') out += ' ';
+        }
+      }
+    })(node);
+    return clean(out, max);
+  }
+
+  function nameOf(el) {
+    const root = el.getRootNode();
+    const labelledby = attr(el, 'aria-labelledby').trim();
+    if (labelledby && root.getElementById) {
+      const t = labelledby.split(/\s+/).map((id) => { const n = root.getElementById(id); return n ? textOf(n, 200, true) : ''; }).filter(Boolean).join(' ');
+      if (t) return t;
+    }
+    const label = attr(el, 'aria-label').trim();
+    if (label) return label;
+    if (el.labels && el.labels.length && !(tagOf(el) === 'INPUT' && (el.type === 'submit' || el.type === 'reset' || el.type === 'button'))) {
+      const t = Array.from(el.labels, (l) => textOf(l)).filter(Boolean).join(' ');
+      if (t) return t;
+    }
+    switch (tagOf(el)) {
+      case 'INPUT':
+        if (el.type === 'submit' || el.type === 'reset' || el.type === 'button') return el.value || (el.type === 'submit' ? 'Submit' : el.type === 'reset' ? 'Reset' : '');
+        if (el.type === 'image') return attr(el, 'alt') || el.value || 'Submit';
+        return attr(el, 'title') || attr(el, 'placeholder');
+      case 'SELECT': case 'TEXTAREA': return attr(el, 'title') || attr(el, 'placeholder');
+      case 'IMG': return attr(el, 'alt') || attr(el, 'title');
+      case 'IFRAME': case 'FRAME': return attr(el, 'title') || attr(el, 'name');
+    }
+    const t = textOf(el);
+    if (t) return t;
+    if (attr(el, 'title')) return attr(el, 'title');
+    // Icon-only controls: fall back to the first labelled descendant.
+    const inner = el.querySelector && el.querySelector('[aria-label], img[alt], svg title, [title]');
+    if (!inner) return '';
+    return clean(tagOf(inner).toLowerCase() === 'title' ? inner.textContent : attr(inner, 'aria-label') || attr(inner, 'alt') || attr(inner, 'title'));
+  }
+
+  function isSecret(el) {
+    return el.type === 'password' || SECRET_AUTOCOMPLETE.test(attr(el, 'autocomplete'));
+  }
+  // Value as shown to the agent. Passwords, one-time codes and card fields are masked.
+  function valueOf(el, max = LIMITS.value) {
+    const tag = tagOf(el);
+    let v;
+    if (tag === 'SELECT') v = Array.from(el.selectedOptions, (o) => o.label || o.text).join(', ');
+    else if (tag === 'TEXTAREA' || (tag === 'INPUT' && (FILLABLE_TYPES.has(el.type) || el.type === 'hidden'))) v = el.value;
+    else if (tag === 'INPUT' && el.type === 'file') v = Array.from(el.files || [], (f) => f.name).join(', ');
+    else if (el.isContentEditable) v = el.innerText;
+    if (!v) return '';
+    return isSecret(el) ? `[masked:${v.length}]` : clean(v, max);
+  }
+
+  function isDisabled(el) {
+    return el.disabled === true || attr(el, 'aria-disabled') === 'true' || !!(el.closest && el.closest('fieldset[disabled]') && el.matches('input,select,textarea,button'));
+  }
+  function matches(el, sel) { try { return el.matches(sel); } catch (e) { return false; } }
+
+  function stateOf(el, role) {
+    const s = {};
+    const tag = tagOf(el);
+    if (tag === 'INPUT' && !INPUT_ROLES[el.type] && el.type !== 'text' && el.type) s.type = el.type;
+    if (tag === 'INPUT' && el.type === 'file') s.type = 'file';
+    const value = valueOf(el);
+    if (value) s.value = value;
+    if (!value && attr(el, 'placeholder')) s.placeholder = clean(attr(el, 'placeholder'), LIMITS.value);
+    if (tag === 'INPUT' && (el.type === 'checkbox' || el.type === 'radio')) s.checked = el.indeterminate ? 'mixed' : el.checked;
+    else if (role === 'checkbox' || role === 'radio' || role === 'switch' || role === 'menuitemcheckbox' || role === 'menuitemradio') {
+      const c = attr(el, 'aria-checked'); s.checked = c === 'mixed' ? 'mixed' : c === 'true';
+    }
+    if (hasAttr(el, 'aria-expanded')) s.expanded = attr(el, 'aria-expanded') === 'true';
+    if (hasAttr(el, 'aria-pressed')) s.pressed = attr(el, 'aria-pressed') === 'true';
+    if (attr(el, 'aria-selected') === 'true') s.selected = true;
+    if (isDisabled(el)) s.disabled = true;
+    if (el.readOnly && (tag === 'INPUT' || tag === 'TEXTAREA')) s.readonly = true;
+    if (el.required || attr(el, 'aria-required') === 'true') s.required = true;
+    if (attr(el, 'aria-invalid') === 'true' || matches(el, ':user-invalid')) s.invalid = true;
+    if ((tag === 'A' || tag === 'AREA') && hasAttr(el, 'href')) s.href = clean(typeof el.href === 'string' ? el.href : absolute(attr(el, 'href'), el.baseURI), 120);
+    return s;
+  }
+
+  // ---------------------------------------------------------------- visibility and hit testing
+  function isVisible(el) {
+    if (el.checkVisibility) {
+      if (!el.checkVisibility({ visibilityProperty: true })) return false;
+    } else {
+      const s = viewOf(el).getComputedStyle(el);
+      if (s.display === 'none' || s.visibility === 'hidden') return false;
+    }
+    const r = el.getBoundingClientRect();
+    return r.width > 0 || r.height > 0;
+  }
+
+  // Walk up from the element that was hit to the overlay it belongs to (a dialog or
+  // a fixed/sticky box); otherwise report the nearest ancestor with an id.
+  function blocker(hit) {
+    let withId = null;
+    let n = hit;
+    for (let i = 0; n && n.nodeType === 1 && i < 10; i++, n = n.parentElement) {
+      const role = attr(n, 'role');
+      if (role === 'dialog' || role === 'alertdialog' || tagOf(n) === 'DIALOG' || attr(n, 'aria-modal') === 'true') return n;
+      const pos = viewOf(n).getComputedStyle(n).position;
+      if (pos === 'fixed' || pos === 'sticky') return n;
+      if (!withId && n.id) withId = n;
+    }
+    return withId || hit;
+  }
+  function hitsTarget(el, hit) {
+    if (hit === el || composedContains(el, hit) || composedContains(hit, el)) return true;
+    // A styled <label> drawn over its own (visually hidden) checkbox still activates it.
+    return !!(el.labels && Array.from(el.labels).some((l) => composedContains(l, hit)));
+  }
+  // Center-point hit test, repeated at every same-origin frame boundary.
+  // Returns { hit: 'clear' | 'covered' | 'offscreen' | 'unknown', by? }.
+  function hitTest(el) {
+    const r = el.getBoundingClientRect();
+    if (r.width === 0 && r.height === 0) return { hit: 'unknown' };
+    let x = r.left + r.width / 2, y = r.top + r.height / 2;
+    let target = el;
+    for (let depth = 0; depth <= LIMITS.frameDepth; depth++) {
+      const view = viewOf(target);
+      if (x < 0 || y < 0 || x >= view.innerWidth || y >= view.innerHeight) return { hit: 'offscreen' };
+      const root = target.getRootNode();
+      const hit = root.elementFromPoint ? root.elementFromPoint(x, y) : null;
+      if (!hit) return { hit: 'unknown' };
+      if (!hitsTarget(target, hit)) return { hit: 'covered', by: blocker(hit) };
+      let frame = null;
+      try { frame = view.frameElement; } catch (e) { /* cross-origin parent */ }
+      if (!frame) return { hit: 'clear' };
+      const fr = frame.getBoundingClientRect();
+      const fs = viewOf(frame).getComputedStyle(frame);
+      x += fr.left + frame.clientLeft + parseFloat(fs.paddingLeft || 0);
+      y += fr.top + frame.clientTop + parseFloat(fs.paddingTop || 0);
+      target = frame;
+    }
+    return { hit: 'unknown' };
+  }
+
+  // How far an element is from being on screen, in px: outside its own frame's
+  // viewport, or outside this window's once the offsets of the same-origin frames
+  // in between are added (CSS transforms on frames are ignored). 0 = on screen.
+  function offscreenDistance(el) {
+    const r = el.getBoundingClientRect();
+    let top = r.top, bottom = r.bottom, dist = 0;
+    let view = viewOf(el);
+    for (let depth = 0; depth <= LIMITS.frameDepth; depth++) {
+      const h = view.innerHeight;
+      dist = Math.max(dist, bottom < 0 ? -bottom : top > h ? top - h : 0);
+      if (view === window) break;
+      let frame = null;
+      try { frame = view.frameElement; } catch (e) { /* cross-origin parent */ }
+      if (!frame) break;
+      const fr = frame.getBoundingClientRect();
+      const offset = fr.top + frame.clientTop + parseFloat(viewOf(frame).getComputedStyle(frame).paddingTop || 0);
+      top = Math.max(top, 0) + offset;
+      bottom = Math.min(bottom, h) + offset;
+      view = viewOf(frame);
+    }
+    return dist;
+  }
+
+  // ---------------------------------------------------------------- frames and the DOM walk
+  function frameAccess(fr) {
+    let doc = null;
+    try { doc = fr.contentDocument; } catch (e) { return { access: 'cross-origin' }; }
+    if (doc) return { access: 'same-origin', doc };
+    let win = null;
+    try { win = fr.contentWindow; } catch (e) { /* ignore */ }
+    if (!win) return { access: 'unavailable' };
+    try { void win.document; return { access: 'unavailable' }; } catch (e) { return { access: 'cross-origin' }; }
+  }
+
+  // Depth-first walk over light DOM, open shadow roots and same-origin frames.
+  // visit(el, ctx) may return false to skip the subtree, and may set
+  // ctx.markInteractive / ctx.pointer to pass state down to the element's
+  // descendants. Returns every frame met on the way, numbered in walk order
+  // (0 = the starting document), including frames it could not enter.
+  function walk(start, visit, opts = {}) {
+    const frames = [{ index: 0, parent: null, depth: 0, url: start.ownerDocument ? start.ownerDocument.URL : document.URL, access: 'same-origin' }];
+    const ctx = { frame: 0, interactiveAncestor: null, parentPointer: false, markInteractive: false, pointer: false };
+    (function rec(el, depth) {
+      if (depth > LIMITS.domDepth || SKIP_TAGS.has(tagOf(el))) return;
+      if (hasAttr(el, 'hidden') || hasAttr(el, 'inert') || attr(el, 'aria-hidden') === 'true') return;
+      ctx.markInteractive = false;
+      ctx.pointer = ctx.parentPointer;
+      if (visit(el, ctx) === false) return;
+      const saved = { interactiveAncestor: ctx.interactiveAncestor, parentPointer: ctx.parentPointer, frame: ctx.frame };
+      if (ctx.markInteractive) ctx.interactiveAncestor = el;
+      ctx.parentPointer = ctx.pointer;
+      const shadow = SHADOW.call(el);
+      if (shadow) for (let c = shadow.firstElementChild; c; c = NEXT.call(c)) rec(c, depth + 1);
+      for (let c = FIRST.call(el); c; c = NEXT.call(c)) rec(c, depth + 1);
+      if ((tagOf(el) === 'IFRAME' || tagOf(el) === 'FRAME') && opts.frames !== false) {
+        const parent = frames[saved.frame];
+        const fa = frameAccess(el);
+        const info = { index: frames.length, parent: parent.index, depth: parent.depth + 1, name: clean(attr(el, 'title') || attr(el, 'name'), LIMITS.name),
+          url: fa.doc ? fa.doc.URL : clean(el.src || attr(el, 'src'), 200), access: fa.access, ref: refFor(el) };
+        frames.push(info);
+        const rootEl = fa.doc && (fa.doc.body || fa.doc.documentElement);
+        if (rootEl && info.depth <= LIMITS.frameDepth && isVisible(el)) {
+          ctx.frame = info.index; ctx.interactiveAncestor = null; ctx.parentPointer = false;
+          if (opts.onFrame) opts.onFrame(info, true);
+          rec(rootEl, depth + 1);
+          if (opts.onFrame) opts.onFrame(info, false);
+        }
+      }
+      ctx.interactiveAncestor = saved.interactiveAncestor; ctx.parentPointer = saved.parentPointer; ctx.frame = saved.frame;
+    })(start, 0);
+    return frames;
+  }
+
+  function startElement(root) {
+    if (root == null) return document.body || document.documentElement;
+    if (typeof root === 'string' && REF_RE.test(root)) {
+      const r = resolve(root);
+      if (!r.ok) throw new Error(r.error.message);
+      return r.el;
+    }
+    const el = document.querySelector(root);
+    if (!el) throw new Error(`root not found: ${root}`);
+    return el;
+  }
+
+  // Interactive = native control, interactive ARIA role, explicit tabindex/onclick,
+  // the root of an editable region, or the element that introduces cursor:pointer
+  // (children that merely inherit the cursor are not counted again).
+  function classify(el, ctx) {
+    const tag = tagOf(el);
+    const role = roleOf(el);
+    let kind = null;
+    if (role && INTERACTIVE_ROLES.has(role)) kind = 'role';
+    else if (tag === 'BUTTON' || tag === 'SELECT' || tag === 'TEXTAREA' || tag === 'SUMMARY') kind = 'native';
+    else if (tag === 'INPUT' && el.type !== 'hidden') kind = 'native';
+    else if ((tag === 'A' || tag === 'AREA') && hasAttr(el, 'href')) kind = 'native';
+    else if (isEditableRoot(el)) kind = 'editable';
+    else if (!ctx.interactiveAncestor && tag !== 'IFRAME' && tag !== 'FRAME' && tag !== 'BODY' && tag !== 'HTML'
+      && ((hasAttr(el, 'tabindex') && el.tabIndex >= 0) || hasAttr(el, 'onclick'))) kind = 'handler';
+    let pointer = ctx.parentPointer;
+    if (!kind && !ctx.interactiveAncestor && tag !== 'BODY' && tag !== 'HTML') {
+      try { pointer = viewOf(el).getComputedStyle(el).cursor === 'pointer'; } catch (e) { /* detached */ }
+      if (pointer && !ctx.parentPointer && tag !== 'LABEL') kind = 'pointer';
+    }
+    return { role, kind, pointer };
+  }
+
+  // ---------------------------------------------------------------- snapshot
+  function collect(opts) {
+    const t0 = performance.now();
+    const max = opts.maxElements == null ? LIMITS.elements : opts.maxElements;
+    const start = startElement(opts.root);
+    const items = [];          // interactive elements, headings, live regions in document order
+    let order = 0;
+    const frameEvents = [];
+    const frames = walk(start, (el, ctx) => {
+      const { role, kind, pointer } = classify(el, ctx);
+      ctx.pointer = pointer;
+      if (kind) {
+        ctx.markInteractive = true;
+        if (isVisible(el)) items.push({ type: 'el', el, role, kind, frame: ctx.frame, order: order++ });
+        return;
+      }
+      if (role === 'heading' && isVisible(el)) {
+        items.push({ type: 'heading', el, frame: ctx.frame, order: order++ });
+        return;
+      }
+      const live = attr(el, 'aria-live');
+      if ((role === 'status' || role === 'alert' || (live && live !== 'off')) && isVisible(el)) {
+        items.push({ type: 'live', el, role: role || 'status', frame: ctx.frame, order: order++ });
+      }
+    }, {
+      frames: opts.frames,
+      onFrame: (info, entering) => frameEvents.push({ info, entering, order: order++ }),
+    });
+
+    // Pick which interactive elements to list: everything in the viewport first,
+    // then the ones closest to it. Output stays in document order.
+    const els = items.filter((i) => i.type === 'el');
+    let chosen = els;
+    if (els.length > max) {
+      for (const i of els) i.dist = offscreenDistance(i.el);
+      chosen = els.slice().sort((a, b) => a.dist - b.dist || a.order - b.order).slice(0, max);
+    }
+    const keep = new Set(chosen);
+    const headingItems = items.filter((i) => i.type === 'heading');
+    const keptHeadings = new Set(headingItems.slice(0, LIMITS.headings));
+    const liveItems = items.filter((i) => i.type === 'live' && textOf(i.el, 2)).slice(0, LIMITS.live);
+    const keptLive = new Set(liveItems);
+
+    const elements = [], headings = [], live = [];
+    const entries = [];   // ordered entries for the text renderer
+    for (const i of items) {
+      if (i.type === 'el' && keep.has(i)) {
+        const e = { ref: refFor(i.el), role: i.role || null, name: clean(nameOf(i.el), LIMITS.name) };
+        if (!i.role) e.tag = tagOf(i.el).toLowerCase();
+        Object.assign(e, stateOf(i.el, i.role));
+        if (i.frame) e.frame = i.frame;
+        if (opts.occlusion !== false) {
+          const h = hitTest(i.el);
+          if (h.hit === 'covered') { e.hit = 'covered'; e.coveredBy = describe(h.by); e.coveredByRef = refFor(h.by); }
+          else e.hit = h.hit;
+        }
+        elements.push(e); entries.push({ order: i.order, frame: i.frame, el: e });
+      } else if (i.type === 'heading' && keptHeadings.has(i)) {
+        const level = /^H[1-6]$/.test(tagOf(i.el)) ? +tagOf(i.el)[1] : (parseInt(attr(i.el, 'aria-level'), 10) || 2);
+        const h = { level, text: clean(textOf(i.el, 160), 100) };
+        if (i.frame) h.frame = i.frame;
+        headings.push(h); entries.push({ order: i.order, frame: i.frame, heading: h });
+      } else if (i.type === 'live' && keptLive.has(i)) {
+        const l = { role: i.role, text: clean(textOf(i.el, 300), 160) };
+        if (i.frame) l.frame = i.frame;
+        live.push(l); entries.push({ order: i.order, frame: i.frame, live: l });
+      }
+    }
+    for (const f of frameEvents) entries.push({ order: f.order, frameEvent: f });
+    entries.sort((a, b) => a.order - b.order);
+
+    const mainEl = document.querySelector('main, [role="main"]') || document.querySelector('article') || document.body;
+    const textChars = opts.textChars == null ? LIMITS.text : opts.textChars;
+    const text = textChars > 0 && mainEl && !opts.root ? clean(mainEl.innerText, textChars) : '';
+
+    const result = {
+      url: location.href,
+      title: clean(document.title, 120),
+      untrusted: true,
+      elements,
+      headings,
+      live,
+      frames: frames.slice(1).map((f) => { const c = Object.assign({}, f); if (c.url) c.url = clean(c.url, 200); return c; }),
+      text,
+      stats: {
+        found: els.length,
+        listed: elements.length,
+        headingsOmitted: Math.max(0, headingItems.length - LIMITS.headings),
+        ms: Math.round(performance.now() - t0),
+      },
     };
+    return { result, entries };
+  }
 
-    // ===== stable ids (WeakMap: no attributes written into the DOM; works for elements of child frames) =====
-    const elementIdMap = new WeakMap();
-    const idToElementMap = new Map();
-    let idCounter = 0;
-    function getStableId(el) {
-        if (elementIdMap.has(el)) return elementIdMap.get(el);
-        const id = `e${++idCounter}`;
-        elementIdMap.set(el, id); idToElementMap.set(id, el); return id;
-    }
-    function getElementById(id) {
-        const el = idToElementMap.get(id);
-        if (el && el.isConnected) return el;   // isConnected also works inside shadow roots and frames
-        idToElementMap.delete(id); return null;
-    }
-    function validateElement(id, v = {}) {
-        const el = getElementById(id);
-        if (!el) return { valid: false, error: 'Element not found or removed from DOM' };
-        if (v.tag && el.tagName.toLowerCase() !== v.tag.toLowerCase())
-            return { valid: false, error: `Tag mismatch: expected ${v.tag}, got ${el.tagName.toLowerCase()}` };
-        if (v.text) { const t = (el.textContent || '').trim().toLowerCase(); if (!t.includes(v.text.toLowerCase())) return { valid: false, error: `Text mismatch: "${v.text}" not in element` }; }
-        if (v.role) { const r = el.getAttribute('role') || getImplicitRole(el); if (r !== v.role) return { valid: false, error: `Role mismatch: expected ${v.role}, got ${r}` }; }
-        return { valid: true, element: el };
-    }
-
-    // ===== collect same-origin frame documents (<iframe> and frameset <frame>) =====
-    function collectDocs() {
-        const docs = [document];
-        (function walk(doc, depth) {
-            if (depth > CONFIG.MAX_FRAME_DEPTH) return;
-            let frames; try { frames = doc.querySelectorAll('iframe,frame'); } catch (e) { return; }
-            for (const fr of frames) {
-                let d; try { d = fr.contentDocument; } catch (e) { continue; } // cross-origin: skip
-                if (d) { docs.push(d); walk(d, depth + 1); }
-            }
-        })(document, 0);
-        return docs;
-    }
-
-    // ===== DOM walker (open shadow + same-origin iframe/frame) =====
-    function walkDOM(root, cb, opt = {}) {
-        const { includeShadow = true, includeFrames = true, maxDepth = CONFIG.MAX_DOM_DEPTH } = opt;
-        const visited = new WeakSet();
-        (function walk(node, depth) {
-            if (depth > maxDepth || !node || visited.has(node)) return;
-            visited.add(node);
-            if (node.nodeType === Node.ELEMENT_NODE) cb(node, depth);
-            if (includeShadow && node.shadowRoot) walk(node.shadowRoot, depth + 1);
-            const kids = node.children || node.childNodes;
-            for (const c of kids) if (c.nodeType === Node.ELEMENT_NODE) walk(c, depth + 1);
-            if (includeFrames && (node.tagName === 'IFRAME' || node.tagName === 'FRAME')) {  // includes frameset <frame>
-                try { const d = node.contentDocument; if (d && (d.body || d.documentElement)) walk(d.body || d.documentElement, depth + 1); } catch (e) { /* cross-origin */ }
-            }
-        })(root, 0);
-    }
-
-    const INTERACTIVE_TAGS = new Set(['A', 'BUTTON', 'INPUT', 'SELECT', 'TEXTAREA', 'DETAILS', 'SUMMARY', 'DIALOG', 'MENU', 'MENUITEM']);
-    const INTERACTIVE_ROLES = new Set(['button', 'link', 'checkbox', 'radio', 'tab', 'tabpanel', 'menuitem', 'menuitemcheckbox', 'menuitemradio', 'option', 'combobox', 'textbox', 'searchbox', 'slider', 'spinbutton', 'switch', 'listbox', 'gridcell', 'treeitem', 'row']);
-    const LANDMARK_ROLES = new Set(['banner', 'navigation', 'main', 'complementary', 'contentinfo', 'search', 'form', 'region']);
-
-    function isVisible(el) {
-        if (!el) return false;
-        if (el.hidden || el.getAttribute('aria-hidden') === 'true') return false;
-        const win = (el.ownerDocument.defaultView || window);
-        const s = win.getComputedStyle(el);
-        if (!s || s.display === 'none' || s.visibility === 'hidden' || parseFloat(s.opacity) === 0) return false;
-        const r = el.getBoundingClientRect();
-        if (r.width === 0 && r.height === 0) return false;
-        return true;
-    }
-    function isInteractive(el) {
-        if (INTERACTIVE_TAGS.has(el.tagName)) return true;
-        const role = el.getAttribute('role');
-        if (role && INTERACTIVE_ROLES.has(role)) return true;
-        if (el.hasAttribute('onclick') || el.hasAttribute('onkeydown') || el.hasAttribute('onkeyup')) return true;
-        if (el.tabIndex >= 0 || el.contentEditable === 'true') return true;
-        try { if ((el.ownerDocument.defaultView || window).getComputedStyle(el).cursor === 'pointer') { const t = (el.textContent || '').trim(); if (t.length > 0 && t.length < 200) return true; } } catch (e) {}
-        return false;
-    }
-    function getImplicitRole(el) {
-        const tag = el.tagName, type = (el.type || '').toLowerCase();
-        const m = { 'A': el.href ? 'link' : null, 'BUTTON': 'button', 'INPUT': { button: 'button', submit: 'button', reset: 'button', checkbox: 'checkbox', radio: 'radio', range: 'slider', text: 'textbox', email: 'textbox', password: 'textbox', search: 'searchbox', tel: 'textbox', url: 'textbox', number: 'spinbutton' }[type] || 'textbox', 'SELECT': 'combobox', 'TEXTAREA': 'textbox', 'NAV': 'navigation', 'MAIN': 'main', 'HEADER': 'banner', 'FOOTER': 'contentinfo', 'ASIDE': 'complementary', 'FORM': 'form', 'ARTICLE': 'article', 'SECTION': (el.getAttribute('aria-label') || el.getAttribute('aria-labelledby')) ? 'region' : null };
-        return m[tag] || null;
-    }
-    function getLandmarkRole(el) { const r = el.getAttribute('role'); return (r && LANDMARK_ROLES.has(r)) ? r : getImplicitRole(el); }
-    function getAccessibleName(el) {
-        const al = el.getAttribute('aria-label'); if (al) return al;
-        const lb = el.getAttribute('aria-labelledby'); if (lb) { const e = (el.ownerDocument).getElementById(lb); if (e) return (e.textContent || '').trim(); }
-        if (el.id) { try { const l = el.ownerDocument.querySelector(`label[for="${CSS.escape(el.id)}"]`); if (l) return (l.textContent || '').trim(); } catch (e) {} }
-        const t = (el.textContent || '').trim(); if (t && t.length < 200) return t;
-        return el.alt || el.title || el.placeholder || '';
-    }
-    function truncate(s, n) { if (!s) return ''; s = ('' + s).trim().replace(/\s+/g, ' '); return s.length <= n ? s : s.slice(0, n - 3) + '...'; }
-    function ariaErrText(el, doc) {  // error text of an aria-invalid field via aria-errormessage/aria-describedby
-        const ref = el.getAttribute('aria-errormessage') || el.getAttribute('aria-describedby');
-        if (ref) { for (const id of ref.split(/\s+/)) { try { const e = doc.getElementById(id); if (e) { const t = (e.textContent || '').trim(); if (t) return truncate(t, 200); } } catch (x) {} } }
-        return el.validationMessage || '';
-    }
-
-    // ===== native value setter (controlled inputs: React, Vue, WebSquare, Nexacro) =====
-    function nativeSetValue(el, value) {
-        let proto;
-        if (el instanceof HTMLTextAreaElement) proto = HTMLTextAreaElement.prototype;
-        else if (el instanceof HTMLSelectElement) proto = HTMLSelectElement.prototype;
-        else proto = HTMLInputElement.prototype;
-        const d = Object.getOwnPropertyDescriptor(proto, 'value');
-        if (d && d.set) d.set.call(el, value); else el.value = value;
-    }
-
-    // ===== snapshot (frameset documents have no <body>: walk documentElement) =====
-    let cachedSnapshot = null, cacheTimestamp = 0, observerStarted = false;
-    function startObserver() {
-        if (observerStarted || !document.documentElement) return;
-        observerStarted = true; let t = null;
-        new MutationObserver(() => { clearTimeout(t); t = setTimeout(() => { cachedSnapshot = null; }, CONFIG.MUTATION_DEBOUNCE_MS); })
-            .observe(document.documentElement, { childList: true, subtree: true, attributes: true, attributeFilter: ['class', 'style', 'hidden', 'disabled', 'aria-hidden'] });
-    }
-    function generateSnapshot(force) {
-        startObserver();
-        if (!force && cachedSnapshot && Date.now() - cacheTimestamp < CONFIG.CACHE_TTL_MS) return cachedSnapshot;
-        const interactive = [], landmarks = [], headings = [], forms = [];
-        const root = document.body || document.documentElement;   // frameset pages
-        if (root) walkDOM(root, (el) => {
-            if (!isVisible(el)) return;
-            const tag = el.tagName.toLowerCase();
-            if (isInteractive(el)) interactive.push({ id: getStableId(el), tag, role: el.getAttribute('role') || getImplicitRole(el), text: truncate(getAccessibleName(el), CONFIG.MAX_TEXT_LENGTH), href: el.href ? truncate(el.href, 100) : undefined, type: el.type || undefined, disabled: el.disabled || undefined, checked: el.checked, value: el.value ? truncate(el.value, 30) : undefined, placeholder: el.placeholder ? truncate(el.placeholder, 30) : undefined });
-            const lr = getLandmarkRole(el);
-            if (lr && LANDMARK_ROLES.has(lr)) landmarks.push({ id: getStableId(el), role: lr, label: truncate(el.getAttribute('aria-label') || '', 50) });
-            if (/^H[1-6]$/.test(el.tagName)) headings.push({ id: getStableId(el), level: +el.tagName[1], text: truncate(el.textContent, 80) });
-            if (tag === 'form') forms.push({ id: getStableId(el), name: el.name || el.id || '', action: el.action ? truncate(el.action, 100) : undefined });
-        });
-        const clean = arr => arr.map(o => { const c = {}; for (const [k, v] of Object.entries(o)) if (v !== undefined && v !== null && v !== '') c[k] = v; return c; });
-        cachedSnapshot = { url: location.href, title: document.title, untrusted: true, interactive: clean(interactive.slice(0, CONFIG.MAX_INTERACTIVE_ELEMENTS)), landmarks: clean(landmarks), headings: clean(headings), forms: clean(forms), mainContent: extractMainContent(), stats: { totalInteractive: interactive.length, shown: Math.min(interactive.length, CONFIG.MAX_INTERACTIVE_ELEMENTS) }, timestamp: Date.now() };
-        cacheTimestamp = Date.now(); return cachedSnapshot;
-    }
-    function extractMainContent() {
-        for (const sel of ['main', '[role="main"]', 'article', '.main-content', '#main-content', '.content', '#content']) { const el = document.querySelector(sel); if (el) return truncate(el.innerText, CONFIG.MAX_CONTENT_LENGTH); }
-        return truncate((document.body || document.documentElement || {}).innerText || '', CONFIG.MAX_CONTENT_LENGTH / 2);
-    }
-
-    function occlusion(el) {
-        const r = el.getBoundingClientRect();
-        if (r.width === 0 && r.height === 0) return { offscreen: true };
-        const cx = Math.round(r.left + r.width / 2), cy = Math.round(r.top + r.height / 2);
-        if (cx < 0 || cy < 0 || cx > innerWidth || cy > innerHeight) return { offscreen: true };
-        const doc = el.ownerDocument; let top;
-        try { top = doc.elementsFromPoint(cx, cy)[0]; } catch (e) { return { occluded: false }; }
-        if (!top) return { occluded: false };
-        const ok = top === el || el.contains(top) || top.contains(el);
-        return ok ? { occluded: false } : { occluded: true, by: top.tagName.toLowerCase() + (top.className ? '.' + String(top.className).split(' ')[0] : '') };
-    }
-
-    // ===== window.open / target=_blank capture =====
-    const openLog = [];
-    let openMode = 'record';   // 'record' = log the URL and open as usual | 'nav' = same tab | 'block'
+  function q(s) { return JSON.stringify(s); }
+  function shortUrl(u) {
     try {
-        const realOpen = window.open.bind(window);
-        const fakeOpen = function (url, name, feat) {
-            const u = url ? String(url) : '';
-            if (u) { window.__aph__.lastOpen = u; openLog.push({ url: u, name: name || '', ts: Date.now() }); }
-            if (u && openMode === 'nav') { location.assign(u); return stubWin(); }
-            if (openMode === 'block') return stubWin();
-            return realOpen(url, name, feat);
-        };
-        const stubWin = () => ({ closed: false, focus() {}, blur() {}, close() { this.closed = true; }, postMessage() {}, get opener() { return window; }, get location() { return window.location; } });
-        Object.defineProperty(window, 'open', { configurable: true, get: () => fakeOpen, set() {} });
-        window.__aphRealOpen = realOpen;  // escape hatch for popups that must really open
-    } catch (e) {}
-    document.addEventListener('click', function (e) {
-        const a = e.target && e.target.closest && e.target.closest('a[target]'); if (!a) return;
-        const t = (a.getAttribute('target') || '').toLowerCase();
-        if (t !== '_blank' && t !== '_new') return;
-        if (!a.href || a.href.startsWith('javascript:') || a.href.startsWith('#')) return;
-        window.__aph__.lastOpen = a.href; openLog.push({ url: a.href, via: 'anchor', ts: Date.now() });
-        if (openMode === 'nav' || openMode === 'block') { e.preventDefault(); e.stopPropagation(); if (openMode === 'nav') location.assign(a.href); }
-    }, true);
+      const url = new URL(u, location.href);
+      return url.origin === location.origin ? clean(url.pathname + url.search, 80) : clean(url.href, 100);
+    } catch (e) { return clean(u, 100); }
+  }
+  function renderLine(e, opts) {
+    let s = `[${e.ref}] ${e.role || e.tag}`;
+    if (e.name) s += ' ' + q(e.name);
+    if (e.type) s += ` type=${e.type}`;
+    if (e.value) s += ` value=${q(e.value)}`;
+    if (e.placeholder && e.placeholder !== e.name) s += ` placeholder=${q(e.placeholder)}`;
+    if (e.checked !== undefined) s += e.checked === 'mixed' ? ' mixed' : e.checked ? ' checked' : ' unchecked';
+    if (e.expanded !== undefined) s += e.expanded ? ' expanded' : ' collapsed';
+    if (e.pressed) s += ' pressed';
+    if (e.selected) s += ' selected';
+    if (e.disabled) s += ' disabled';
+    if (e.readonly) s += ' readonly';
+    if (e.required) s += ' required';
+    if (e.invalid) s += ' invalid';
+    if (opts.hrefs && e.href) s += ` -> ${shortUrl(e.href)}`;
+    if (e.hit === 'covered') s += ` covered-by=[${e.coveredByRef}] ${e.coveredBy}`;
+    return s;
+  }
+  function renderText(result, entries, opts) {
+    const lines = [`page ${q(result.title)} ${clean(result.url, 160)}`];
+    const depth = { 0: 0 };
+    for (const f of result.frames) depth[f.index] = f.depth;
+    const pad = (n) => '  '.repeat(n || 0);
+    for (const en of entries) {
+      if (en.frameEvent) {
+        const { info, entering } = en.frameEvent;
+        if (entering) lines.push(`${pad(info.depth - 1)}frame ${info.index}${info.name ? ' ' + q(info.name) : ''} ${shortUrl(info.url)}`);
+        continue;
+      }
+      const indent = pad(depth[en.frame || 0]);
+      if (en.el) lines.push(indent + renderLine(en.el, opts));
+      else if (en.heading) lines.push(`${indent}h${en.heading.level} ${q(en.heading.text)}`);
+      else if (en.live) lines.push(`${indent}${en.live.role} ${q(en.live.text)}`);
+    }
+    for (const f of result.frames) {
+      if (f.access !== 'same-origin') lines.push(`${pad(f.depth - 1)}frame ${f.index}${f.name ? ' ' + q(f.name) : ''} ${shortUrl(f.url)} (${f.access}, not traversed)`);
+    }
+    const st = result.stats;
+    if (st.listed < st.found) lines.push(`listed ${st.listed} of ${st.found} interactive elements (viewport first); use find(text) or snapshot({ root }) for the rest`);
+    if (st.headingsOmitted) lines.push(`${st.headingsOmitted} more headings omitted`);
+    if (result.text) lines.push(`text: ${q(result.text)}`);
+    return lines.join('\n');
+  }
 
-    // ===== public API =====
-    window.__aph__ = {
-        version: '0.1.0',
-        lastOpen: null,
-        getSnapshot(o = {}) { return generateSnapshot(o.forceRefresh); },
-        getInteractive(o = {}) { const { limit = 50, filter = null, role = null } = o; let items = generateSnapshot().interactive; if (filter) { const f = filter.toLowerCase(); items = items.filter(e => (e.text || '').toLowerCase().includes(f) || (e.role || '').toLowerCase().includes(f) || (e.placeholder || '').toLowerCase().includes(f)); } if (role) items = items.filter(e => e.role === role); return items.slice(0, limit); },
-        findByText(text, o = {}) { const { tag = null, exact = false, limit = 10 } = o; const out = []; const root = document.body || document.documentElement; if (root) walkDOM(root, (el) => { if (!isVisible(el)) return; if (tag && el.tagName.toLowerCase() !== tag.toLowerCase()) return; const c = getAccessibleName(el); if (!c) return; if (exact ? c === text : c.toLowerCase().includes(text.toLowerCase())) out.push({ id: getStableId(el), tag: el.tagName.toLowerCase(), role: el.getAttribute('role') || getImplicitRole(el), text: truncate(c, CONFIG.MAX_TEXT_LENGTH), interactive: isInteractive(el) }); }); return out.slice(0, limit); },
-        findBySelector(sel, o = {}) { const { limit = 10 } = o; const out = []; try { for (const el of document.querySelectorAll(sel)) { if (out.length >= limit) break; if (!isVisible(el)) continue; out.push({ id: getStableId(el), tag: el.tagName.toLowerCase(), text: truncate(getAccessibleName(el), CONFIG.MAX_TEXT_LENGTH) }); } } catch (e) { return { error: `Invalid selector: ${e.message}` }; } return out; },
+  // ---------------------------------------------------------------- value setters
+  // Assigning el.value on a React-controlled input updates React's value tracker,
+  // so React sees no change and keeps its own state. The prototype's setter (from
+  // the element's own realm, which matters for frames) bypasses the tracker.
+  function setNative(el, prop, value) {
+    const view = viewOf(el);
+    const proto = tagOf(el) === 'TEXTAREA' ? view.HTMLTextAreaElement.prototype
+      : tagOf(el) === 'SELECT' ? view.HTMLSelectElement.prototype
+        : tagOf(el) === 'OPTION' ? view.HTMLOptionElement.prototype
+          : view.HTMLInputElement.prototype;
+    const d = Object.getOwnPropertyDescriptor(proto, prop);
+    if (d && d.set) d.set.call(el, value); else el[prop] = value;
+  }
+  function fire(el, type, init) {
+    const view = viewOf(el);
+    const Ctor = type === 'input' && view.InputEvent ? view.InputEvent : view.Event;
+    el.dispatchEvent(new Ctor(type, Object.assign({ bubbles: true, composed: true }, init)));
+  }
+  function gate(el, opts, needsHit) {
+    if (isDisabled(el)) return fail('DISABLED', `${describe(el)} is disabled`);
+    if (opts.force) return null;
+    if (!isVisible(el)) return fail('NOT_VISIBLE', `${describe(el)} is not visible`);
+    if (needsHit) {
+      const h = hitTest(el);
+      if (h.hit === 'covered') return fail('OCCLUDED', `${describe(el)} is covered by ${describe(h.by)}`, { coveredBy: describe(h.by), coveredByRef: refFor(h.by) });
+    }
+    return null;
+  }
+  function domClick(el) {
+    if (typeof el.click === 'function') el.click();
+    else { const view = viewOf(el); el.dispatchEvent(new view.MouseEvent('click', { bubbles: true, cancelable: true, composed: true, view })); }
+  }
+  const tick = () => new Promise((r) => setTimeout(r, 0));
 
-        // ===== frame traversal (frameset / same-origin iframes) =====
-        // querySelectorAll across all same-origin frames; matches get stable ids usable with click/fill
-        queryAll(sel, o = {}) {
-            const { limit = 50, visibleOnly = true } = o; const out = [];
-            collectDocs().forEach((doc, di) => {
-                let els; try { els = doc.querySelectorAll(sel); } catch (e) { return; }
-                for (const el of els) { if (out.length >= limit) break; if (visibleOnly && !isVisible(el)) continue; out.push({ id: getStableId(el), frame: di, frameUrl: di === 0 ? 'top' : (doc.defaultView && doc.defaultView.frameElement ? (doc.defaultView.frameElement.name || doc.URL) : doc.URL), tag: el.tagName.toLowerCase(), text: truncate(getAccessibleName(el), CONFIG.MAX_TEXT_LENGTH) }); }
-            });
-            return out;
-        },
-        // frame structure, for frameset pages whose top document is empty
-        frames() {
-            const out = []; const docs = collectDocs();
-            docs.forEach((doc, di) => { const fe = doc.defaultView && doc.defaultView.frameElement; out.push({ index: di, url: doc.URL, name: (fe && fe.name) || (di === 0 ? '(top)' : ''), interactiveCount: (() => { let n = 0; try { doc.querySelectorAll('a,button,input,select,textarea').forEach(e => { if (isVisible(e)) n++; }); } catch (x) {} return n; })() }); });
-            return out;
-        },
+  // ---------------------------------------------------------------- forms
+  function frameDocs() {
+    const docs = [];
+    walk(document.documentElement, () => true, {
+      onFrame: (info, entering) => { if (entering) docs.push(info); },
+    });
+    const out = [{ index: 0, doc: document }];
+    for (const info of docs) { const fa = frameAccess(refElement(info.ref)); if (fa.doc) out.push({ index: info.index, doc: fa.doc }); }
+    return out;
+  }
+  function refElement(ref) { const w = byRef.get(ref); return w && w.deref(); }
+  function errorText(el) {
+    const ids = (attr(el, 'aria-errormessage') + ' ' + attr(el, 'aria-describedby')).trim();
+    const root = el.getRootNode();
+    if (ids && root.getElementById) {
+      for (const id of ids.split(/\s+/)) { const n = root.getElementById(id); const t = n && textOf(n); if (t) return clean(t, 200); }
+    }
+    return el.validationMessage || '';
+  }
+  const MESSAGE_SELECTOR = '[role="alert"], .error, .errors, .invalid-feedback, .field-error, .error-message, .errorMessage, .form-error, .text-danger, .has-error .help-block';
 
-        click(id, v = {}) { const r = validateElement(id, v); if (!r.valid) return { success: false, error: r.error }; const occ = occlusion(r.element); try { r.element.click(); return { success: true, id, occlusion: occ.occluded ? occ : undefined, offscreen: occ.offscreen || undefined }; } catch (e) { return { success: false, error: e.message }; } },
-        fill(id, value, v = {}) { const r = validateElement(id, v); if (!r.valid) return { success: false, error: r.error }; const el = r.element; try { el.focus(); if (el.isContentEditable) el.textContent = value; else nativeSetValue(el, value); el.dispatchEvent(new Event('input', { bubbles: true })); el.dispatchEvent(new Event('change', { bubbles: true })); el.dispatchEvent(new Event('blur', { bubbles: true })); return { success: true, id, value: el.isContentEditable ? el.textContent : el.value }; } catch (e) { return { success: false, error: e.message }; } },
-        select(id, value, v = {}) { const r = validateElement(id, v); if (!r.valid) return { success: false, error: r.error }; const el = r.element; try { if (el.tagName === 'SELECT') { let opt = [...el.options].find(o => o.value === value) || [...el.options].find(o => (o.textContent || '').trim() === value); if (!opt) return { success: false, error: `option not found: ${value}` }; nativeSetValue(el, opt.value); } else nativeSetValue(el, value); el.dispatchEvent(new Event('input', { bubbles: true })); el.dispatchEvent(new Event('change', { bubbles: true })); return { success: true, id, value: el.value }; } catch (e) { return { success: false, error: e.message }; } },
-        focus(id) { const el = getElementById(id); if (!el) return { success: false, error: 'Element not found' }; try { el.focus(); return { success: true, id }; } catch (e) { return { success: false, error: e.message }; } },
-        scrollTo(id, o = {}) { const el = getElementById(id); if (!el) return { success: false, error: 'Element not found' }; try { el.scrollIntoView({ behavior: o.smooth !== false ? 'smooth' : 'instant', block: o.block || 'center', inline: o.inline || 'nearest' }); return { success: true, id }; } catch (e) { return { success: false, error: e.message }; } },
-        getElement(id) { const el = getElementById(id); if (!el) return { found: false }; const rect = el.getBoundingClientRect(); return { found: true, tag: el.tagName.toLowerCase(), role: el.getAttribute('role') || getImplicitRole(el), text: truncate(getAccessibleName(el), CONFIG.MAX_TEXT_LENGTH), visible: isVisible(el), interactive: isInteractive(el), occlusion: occlusion(el), rect: { x: Math.round(rect.x), y: Math.round(rect.y), width: Math.round(rect.width), height: Math.round(rect.height) }, attributes: { id: el.id || undefined, class: el.className || undefined, href: el.href || undefined, disabled: el.disabled || undefined } }; },
-        attr(id, name) { const el = getElementById(id); if (!el) return { error: 'not found' }; return { value: el.getAttribute(name) }; },
-
-        // ===== validation errors (read-only, all same-origin frames) =====
-        getErrors() {
-            const out = [];
-            collectDocs().forEach((doc, di) => {
-                // 1) HTML5 constraint validation (:invalid + validationMessage)
-                let fields; try { fields = doc.querySelectorAll('input,select,textarea'); } catch (e) { return; }
-                for (const el of fields) {
-                    try {
-                        if (el.willValidate && !el.validity.valid) {
-                            out.push({ frame: di, kind: 'constraint', id: getStableId(el), field: el.name || el.id || '', message: el.validationMessage || '', value: truncate(el.value, 40) });
-                        }
-                        if (el.getAttribute('aria-invalid') === 'true') {
-                            out.push({ frame: di, kind: 'aria-invalid', id: getStableId(el), field: el.name || el.id || '', message: ariaErrText(el, doc) });
-                        }
-                    } catch (e) {}
-                }
-                // 2) visible error-message elements rendered by frameworks
-                let msgs; try { msgs = doc.querySelectorAll('[role="alert"],.error,.invalid,.help-block,.field-error,.errorMessage,.error-message,.invalid-feedback,.text-danger,.has-error'); } catch (e) { return; }
-                for (const m of msgs) {
-                    if (!isVisible(m)) continue;
-                    const t = (m.textContent || '').trim();
-                    if (t && t.length < 300) out.push({ frame: di, kind: 'message', id: getStableId(m), text: truncate(t, 200) });
-                }
-            });
-            return out;
-        },
-
-        // ===== current form values (read-only, all same-origin frames) =====
-        exportForm(formSel) {
-            const forms = [];
-            collectDocs().forEach((doc, di) => {
-                let formEls; try { formEls = formSel ? doc.querySelectorAll(formSel) : doc.querySelectorAll('form'); } catch (e) { return; }
-                // pages without <form> elements (common in widget frameworks): use the body
-                const targets = formEls.length ? [...formEls] : [doc.body || doc.documentElement].filter(Boolean);
-                targets.forEach((form, fi) => {
-                    const fields = {};
-                    let inputs; try { inputs = form.querySelectorAll('input,select,textarea'); } catch (e) { return; }
-                    for (const el of inputs) {
-                        const key = el.name || el.id || el.getAttribute('aria-label') || el.placeholder;
-                        if (!key) continue;
-                        let val;
-                        if (el.type === 'checkbox' || el.type === 'radio') { if (!el.checked) continue; val = el.value || true; }
-                        else if (el.type === 'password') val = '••••(' + (el.value || '').length + ')';   // never export password values
-                        else val = el.value;
-                        if (val === '' || val == null) continue;
-                        fields[key] = typeof val === 'string' ? truncate(val, 200) : val;
-                    }
-                    if (Object.keys(fields).length) forms.push({ frame: di, formIndex: fi, name: form.name || form.id || '', action: form.action || undefined, fields });
-                });
-            });
-            return forms;
-        },
-
-        // ===== popups ('record' by default: log only; 'nav' = same tab; 'block') =====
-        popupLog() { return openLog.slice(); },
-        setOpenMode(mode) { openMode = mode; return { openMode }; },
-        getOpenMode() { return { openMode, lastOpen: this.lastOpen, count: openLog.length }; },
-
-        waitStable(timeout = 3000) { return new Promise(resolve => { let timer; const obs = new MutationObserver(() => { clearTimeout(timer); timer = setTimeout(() => { obs.disconnect(); resolve({ stable: true }); }, 200); }); obs.observe(document.documentElement, { childList: true, subtree: true, attributes: true }); timer = setTimeout(() => { obs.disconnect(); resolve({ stable: true }); }, 200); setTimeout(() => { obs.disconnect(); resolve({ stable: false, reason: 'timeout' }); }, timeout); }); },
-        cleanup() { let removed = 0; for (const [id, el] of idToElementMap.entries()) if (!el.isConnected) { idToElementMap.delete(id); removed++; } return { removed, remaining: idToElementMap.size }; },
-        health() { return { version: this.version, runAt: 'document-start', isTop: window.top === window, url: location.href, idMapSize: idToElementMap.size, openMode, openLog: openLog.length }; },
-        debug() { return this.health(); }
+  // ---------------------------------------------------------------- popups
+  const popupLog = [];
+  let popupMode = 'off';
+  let active = null;     // the window.open wrapper that currently logs
+  let original = null;   // what window.open was before `active`
+  function logPopup(entry) { popupLog.push(entry); if (popupLog.length > 100) popupLog.shift(); }
+  function absolute(u, base = location.href) { try { return new URL(u, base).href; } catch (e) { return String(u); } }
+  function onLinkClick(e) {
+    if (popupMode === 'off' || e.defaultPrevented) return;
+    const a = e.composedPath().find((n) => n.nodeType === 1 && (tagOf(n) === 'A' || tagOf(n) === 'AREA'));
+    if (!a || !hasAttr(a, 'href')) return;
+    const target = attr(a, 'target').toLowerCase();
+    if (target !== '_blank' && target !== '_new') return;
+    const url = absolute(attr(a, 'href'), a.baseURI);
+    if (/^javascript:/i.test(url)) return;
+    logPopup({ url, target, via: 'link', mode: popupMode, ts: Date.now() });
+    if (popupMode === 'same-tab' || popupMode === 'block') {
+      e.preventDefault();
+      if (popupMode === 'same-tab') location.assign(url);
+    }
+  }
+  function wrapOpen(realOpen) {
+    const wrapper = function open(url, target, features) {
+      // Wrappers left inside a chain the page built on top of them only pass calls on.
+      if (popupMode === 'off' || active !== wrapper) return realOpen.apply(window, arguments);
+      const abs = url ? absolute(url) : '';
+      logPopup({ url: abs, target: target ? String(target) : '', via: 'window.open', mode: popupMode, ts: Date.now() });
+      if (popupMode === 'block') return null;
+      if (popupMode === 'same-tab' && abs) { location.assign(abs); return null; }
+      return realOpen.apply(window, arguments);
     };
-    window.__aphReady = true;   // e.g. page.waitForFunction(() => window.__aphReady)
+    return wrapper;
+  }
+  function setPopupMode(mode) {
+    if (!['off', 'record', 'same-tab', 'block'].includes(mode)) throw new Error(`unknown popup mode: ${mode}`);
+    popupMode = mode;
+    if (mode === 'off') {
+      document.removeEventListener('click', onLinkClick, true);
+      // Put window.open back only if nobody replaced our wrapper in the meantime.
+      if (active && window.open === active) window.open = original;
+      active = original = null;
+      return;
+    }
+    document.addEventListener('click', onLinkClick, true);
+    if (active && window.open === active) return;
+    original = window.open;
+    active = wrapOpen(original);
+    window.open = active;
+  }
+
+  // ---------------------------------------------------------------- public API
+  const api = {
+    version: VERSION,
+    doc: DOC,
+
+    // Compact view of the page. format: 'json' (default) or 'text'.
+    // Options: maxElements, root (ref or CSS selector), textChars, frames, occlusion, hrefs.
+    snapshot(opts = {}) {
+      const { result, entries } = collect(opts);
+      return opts.format === 'text' ? renderText(result, entries, opts) : result;
+    },
+
+    // Visible elements whose name (or own text) contains `text`. Interactive matches
+    // come first; a matching <label> is reported as the control it labels.
+    // Options: exact, role, limit, interactiveOnly.
+    find(text, opts = {}) {
+      if (typeof text !== 'string' || !text) throw new Error('find(text): text must be a non-empty string');
+      const limit = opts.limit || 20;
+      const needle = opts.exact ? clean(text) : clean(text).toLowerCase();
+      const hit = (s) => (opts.exact ? s === needle : s.toLowerCase().includes(needle));
+      const found = [];
+      const seen = new Set();
+      const add = (el, role, name, interactive, frame) => {
+        if (seen.has(el)) return;
+        seen.add(el);
+        const e = { ref: refFor(el), role: role || null, name: clean(name, LIMITS.name), interactive };
+        if (!role) e.tag = tagOf(el).toLowerCase();
+        if (frame) e.frame = frame;
+        found.push(e);
+      };
+      walk(document.body || document.documentElement, (el, ctx) => {
+        const { role, kind, pointer } = classify(el, ctx);
+        ctx.pointer = pointer;
+        if (kind) {
+          ctx.markInteractive = true;
+          if ((!opts.role || role === opts.role) && hit(clean(nameOf(el))) && isVisible(el)) add(el, role, nameOf(el), true, ctx.frame);
+          return;
+        }
+        if (opts.interactiveOnly || ctx.interactiveAncestor) return;
+        // Match on the element's own text nodes, so its ancestors are not reported as well.
+        let own = '';
+        for (let c = el.firstChild; c; c = c.nextSibling) if (c.nodeType === 3) own += c.nodeValue;
+        own = clean(own);
+        if (!own || !hit(own) || !isVisible(el)) return;
+        const control = tagOf(el) === 'LABEL' && el.control;
+        if (control && isVisible(control)) {
+          const crole = roleOf(control);
+          if (!opts.role || crole === opts.role) add(control, crole, nameOf(control), true, ctx.frame);
+        } else if (!opts.role || role === opts.role) {
+          add(el, role, textOf(el), false, ctx.frame);
+        }
+      });
+      found.sort((a, b) => b.interactive - a.interactive);
+      return found.slice(0, limit);
+    },
+
+    // querySelectorAll across same-origin frames and open shadow roots.
+    query(selector, opts = {}) {
+      const limit = opts.limit || 50;
+      const out = [];
+      const seen = new Set();
+      const take = (el, frame) => {
+        if (out.length >= limit || seen.has(el) || (opts.visibleOnly !== false && !isVisible(el))) return;
+        seen.add(el);
+        const role = roleOf(el);
+        const e = { ref: refFor(el), role: role || null, tag: tagOf(el).toLowerCase(), name: clean(nameOf(el), LIMITS.name) };
+        if (frame) e.frame = frame;
+        out.push(e);
+      };
+      document.querySelector(selector);   // throws a SyntaxError for invalid selectors
+      walk(document.documentElement, (el, ctx) => {
+        if (out.length >= limit) return false;
+        if (el.matches(selector)) take(el, ctx.frame);
+      });
+      return out;
+    },
+
+    // Everything known about one element.
+    inspect(ref) {
+      const r = resolve(ref);
+      if (!r.ok) return r;
+      const el = r.el;
+      const role = roleOf(el);
+      const rect = el.getBoundingClientRect();
+      const h = hitTest(el);
+      const info = Object.assign({ ok: true, ref, tag: tagOf(el).toLowerCase(), role, name: clean(nameOf(el), 200) }, stateOf(el, role), {
+        visible: isVisible(el),
+        hit: h.hit,
+        rect: { x: Math.round(rect.x), y: Math.round(rect.y), width: Math.round(rect.width), height: Math.round(rect.height) },
+        attributes: {},
+      });
+      if (h.by) { info.coveredBy = describe(h.by); info.coveredByRef = refFor(h.by); }
+      for (const a of ['id', 'name', 'type', 'title', 'autocomplete', 'maxlength', 'pattern', 'min', 'max', 'data-testid']) {
+        if (hasAttr(el, a)) info.attributes[a] = clean(attr(el, a), 120);
+      }
+      if (classOf(el)) info.attributes.class = clean(classOf(el), 120);
+      if (tagOf(el) === 'SELECT' && !isSecret(el)) info.options = Array.from(el.options).slice(0, 50).map((o) => ({ value: clean(o.value, 60), label: clean(o.label || o.text, 60), selected: o.selected }));
+      if (el.validationMessage) info.validationMessage = el.validationMessage;
+      return info;
+    },
+
+    // DOM click (el.click(): isTrusted is false). Refuses disabled, hidden or covered
+    // elements unless { force: true }.
+    click(ref, opts = {}) {
+      const r = resolve(ref);
+      if (!r.ok) return r;
+      const blocked = gate(r.el, opts, true);
+      if (blocked) return blocked;
+      domClick(r.el);
+      return { ok: true, ref };
+    },
+
+    // Replace the value of a text-like input, textarea or contenteditable.
+    // Fires input and change; blurs afterwards unless { blur: false }.
+    fill(ref, text, opts = {}) {
+      const r = resolve(ref);
+      if (!r.ok) return r;
+      const el = r.el;
+      text = text == null ? '' : String(text);
+      const tag = tagOf(el);
+      const isInput = tag === 'INPUT';
+      if (isInput && !FILLABLE_TYPES.has(el.type)) {
+        const hint = el.type === 'checkbox' || el.type === 'radio' ? 'use setChecked()' : el.type === 'file' ? 'use uploadFile() from the Node side' : 'use click()';
+        return fail('UNSUPPORTED_CONTROL', `cannot fill input type=${el.type}; ${hint}`);
+      }
+      if (!isInput && tag !== 'TEXTAREA' && !el.isContentEditable) return fail('UNSUPPORTED_CONTROL', `cannot fill <${tag.toLowerCase()}>; use select() for <select>, click() for custom widgets`);
+      if ((isInput || tag === 'TEXTAREA') && el.readOnly) return fail('READONLY', `${describe(el)} is read-only`);
+      const blocked = gate(el, opts, false);
+      if (blocked) return blocked;
+      el.focus({ preventScroll: true });
+      if (el.isContentEditable && !isInput && tag !== 'TEXTAREA') {
+        const doc = el.ownerDocument;
+        const range = doc.createRange();
+        range.selectNodeContents(el);
+        const sel = doc.getSelection();
+        sel.removeAllRanges(); sel.addRange(range);
+        const ok = text ? doc.execCommand('insertText', false, text) : doc.execCommand('delete', false);
+        if (!ok) return fail('UNSUPPORTED_CONTROL', 'the editable element rejected insertText');
+      } else {
+        setNative(el, 'value', text);
+        fire(el, 'input', { inputType: 'insertReplacementText', data: text });
+        fire(el, 'change');
+        // Single-line inputs drop newlines; email and url inputs also trim.
+        let expected = isInput ? text.replace(/[\r\n]/g, '') : text.replace(/\r\n?/g, '\n');
+        if (isInput && (el.type === 'email' || el.type === 'url')) expected = expected.trim();
+        if (el.value !== expected && !(isInput && el.type === 'color')) {
+          if (opts.blur !== false) el.blur();
+          return fail('VALUE_REJECTED', `${describe(el)} did not accept the value`, { value: valueOf(el) });
+        }
+      }
+      if (opts.blur !== false) el.blur();
+      return { ok: true, ref, value: valueOf(el) };
+    },
+
+    // Choose options of a native <select> by value or visible label.
+    select(ref, values, opts = {}) {
+      const r = resolve(ref);
+      if (!r.ok) return r;
+      const el = r.el;
+      if (tagOf(el) !== 'SELECT') return fail('UNSUPPORTED_CONTROL', `select() needs a native <select>, got <${tagOf(el).toLowerCase()}>; click the option instead`);
+      const blocked = gate(el, opts, false);
+      if (blocked) return blocked;
+      const wanted = Array.isArray(values) ? values.map(String) : [String(values)];
+      if (!el.multiple && wanted.length !== 1) return fail('BAD_ARGUMENT', 'a single-choice select takes exactly one value');
+      const options = Array.from(el.options);
+      const picked = [];
+      for (const w of wanted) {
+        const o = options.find((x) => x.value === w) || options.find((x) => clean(x.label || x.text) === w)
+          || options.find((x) => clean(x.label || x.text).toLowerCase() === w.toLowerCase());
+        if (!o) return fail('OPTION_NOT_FOUND', `no option ${q(w)}`, { options: options.slice(0, 20).map((x) => clean(x.label || x.text, 40)) });
+        picked.push(o);
+      }
+      el.focus({ preventScroll: true });
+      if (el.multiple) for (const o of options) setNative(o, 'selected', picked.includes(o));
+      else setNative(el, 'value', picked[0].value);
+      fire(el, 'input');
+      fire(el, 'change');
+      if (opts.blur !== false) el.blur();
+      return { ok: true, ref, value: valueOf(el, 200) };
+    },
+
+    // Bring a checkbox, radio or switch to the requested state with a DOM click,
+    // then confirm the page kept it. Returns a promise.
+    async setChecked(ref, checked = true, opts = {}) {
+      const r = resolve(ref);
+      if (!r.ok) return r;
+      const el = r.el;
+      const native = tagOf(el) === 'INPUT' && (el.type === 'checkbox' || el.type === 'radio');
+      const role = roleOf(el);
+      if (!native && !['checkbox', 'radio', 'switch', 'menuitemcheckbox', 'menuitemradio'].includes(role)) {
+        return fail('UNSUPPORTED_CONTROL', `${describe(el)} is not a checkbox, radio or switch`);
+      }
+      const read = () => (native ? el.checked : attr(el, 'aria-checked') === 'true');
+      if (read() === !!checked) return { ok: true, ref, checked: read(), changed: false };
+      if (!checked && (el.type === 'radio' || role === 'radio' || role === 'menuitemradio')) return fail('UNSUPPORTED_CONTROL', 'a radio button cannot be unchecked; check another option instead');
+      const blocked = gate(el, opts, true);
+      if (blocked) return blocked;
+      domClick(el);
+      await tick();
+      if (read() !== !!checked) return fail('NO_EFFECT', `${describe(el)} did not change state`);
+      return { ok: true, ref, checked: read(), changed: true };
+    },
+
+    focus(ref) {
+      const r = resolve(ref);
+      if (!r.ok) return r;
+      r.el.focus({ preventScroll: true });
+      return { ok: true, ref, focused: r.el.getRootNode().activeElement === r.el };
+    },
+
+    scrollIntoView(ref, opts = {}) {
+      const r = resolve(ref);
+      if (!r.ok) return r;
+      r.el.scrollIntoView({ block: opts.block || 'center', inline: 'nearest' });
+      return { ok: true, ref };
+    },
+
+    // Validation problems visible right now: constraint validation, aria-invalid
+    // fields and rendered error messages, across same-origin frames.
+    errors() {
+      const out = [];
+      const seenMsg = new Set();
+      for (const { index, doc } of frameDocs()) {
+        for (const el of doc.querySelectorAll('input, select, textarea')) {
+          if (el.type === 'hidden') continue;
+          const field = attr(el, 'name') || attr(el, 'id') || clean(nameOf(el), 40);
+          const constraint = el.willValidate && !el.validity.valid;
+          const ariaInvalid = attr(el, 'aria-invalid') === 'true';
+          if (!constraint && !ariaInvalid) continue;
+          const e = { kind: ariaInvalid ? 'aria-invalid' : 'constraint', ref: refFor(el), field, message: ariaInvalid ? errorText(el) : el.validationMessage };
+          if (constraint) e.userInvalid = matches(el, ':user-invalid');
+          if (index) e.frame = index;
+          out.push(e);
+        }
+        for (const m of doc.querySelectorAll(MESSAGE_SELECTOR)) {
+          if (seenMsg.has(m) || !isVisible(m)) continue;
+          const t = textOf(m, 300);
+          if (!t || out.some((o) => o.message === t)) continue;
+          for (const inner of m.querySelectorAll(MESSAGE_SELECTOR)) seenMsg.add(inner);
+          const e = { kind: 'message', ref: refFor(m), message: clean(t, 200) };
+          if (index) e.frame = index;
+          out.push(e);
+        }
+      }
+      return out;
+    },
+
+    // Current values of forms (or of one form/container given as a ref or CSS selector).
+    // Passwords, one-time codes and card numbers are masked; hidden inputs are skipped
+    // unless { includeHidden: true }. Masking is best effort, not a privacy guarantee.
+    formState(target, opts = {}) {
+      const containers = [];
+      if (typeof target === 'string' && REF_RE.test(target)) {
+        const r = resolve(target);
+        if (!r.ok) return r;
+        containers.push({ el: r.el, frame: 0 });
+      } else {
+        for (const { index, doc } of frameDocs()) {
+          const found = target ? doc.querySelectorAll(target) : doc.querySelectorAll('form');
+          if (found.length) for (const f of found) containers.push({ el: f, frame: index });
+          else if (!target && (doc.body || doc.documentElement)) containers.push({ el: doc.body || doc.documentElement, frame: index });
+        }
+      }
+      const out = [];
+      for (const { el: form, frame } of containers) {
+        const fields = Object.create(null);
+        const isForm = tagOf(form) === 'FORM';
+        const controls = isForm ? Array.from(FORM_ELEMENTS.call(form)) : Array.from(EP.querySelectorAll.call(form, 'input, select, textarea'));
+        for (const el of controls) {
+          if (!el.matches('input, select, textarea')) continue;
+          if (el.type === 'hidden' && !opts.includeHidden) continue;
+          const key = attr(el, 'name') || attr(el, 'id') || clean(nameOf(el), 40);
+          if (!key) continue;
+          let value;
+          if (el.type === 'checkbox' || el.type === 'radio') { if (!el.checked) continue; value = el.value === 'on' ? true : el.value; }
+          else value = valueOf(el, 200);
+          if (value === '' || value == null) continue;
+          if (key in fields) fields[key] = [].concat(fields[key], value);
+          else fields[key] = value;
+        }
+        if (!Object.keys(fields).length) continue;
+        const entry = { ref: refFor(form), name: attr(form, 'name') || attr(form, 'id'), fields };
+        if (isForm && hasAttr(form, 'action')) entry.action = clean(absolute(attr(form, 'action')), 200);
+        if (frame) entry.frame = frame;
+        out.push(entry);
+      }
+      return out;
+    },
+
+    // Frames reachable from this document, including ones that cannot be entered.
+    frames() {
+      return walk(document.documentElement, () => true).slice(1);
+    },
+
+    // Track new-window requests (window.open and target=_blank links).
+    // 'record' logs and lets them open, 'same-tab' navigates this tab instead,
+    // 'block' drops them, 'off' (default) restores window.open.
+    capturePopups(mode = 'record') {
+      setPopupMode(mode);
+      return { ok: true, mode: popupMode };
+    },
+    popups(opts = {}) {
+      const list = popupLog.slice();
+      if (opts.clear) popupLog.length = 0;
+      return list;
+    },
+
+    // Resolves once the document has had no mutations for `quiet` ms (or after `timeout`).
+    waitStable(opts = {}) {
+      const quiet = opts.quiet || 300;
+      const timeout = opts.timeout || 5000;
+      const t0 = performance.now();
+      return new Promise((done) => {
+        let timer = null;
+        const finish = (stable) => { obs.disconnect(); clearTimeout(timer); clearTimeout(cap); done({ ok: true, stable, waited: Math.round(performance.now() - t0) }); };
+        const obs = new MutationObserver(() => { clearTimeout(timer); timer = setTimeout(() => finish(true), quiet); });
+        obs.observe(document.documentElement, { childList: true, subtree: true, attributes: true, characterData: true });
+        timer = setTimeout(() => finish(true), quiet);
+        const cap = setTimeout(() => finish(false), timeout);
+      });
+    },
+
+    // Remove listeners, restore window.open and drop the global.
+    dispose() {
+      setPopupMode('off');
+      byRef.clear();
+      delete window.__aph__;
+      return { ok: true };
+    },
+  };
+
+  Object.defineProperty(window, '__aph__', { value: api, configurable: true, enumerable: false, writable: false });
 })();
