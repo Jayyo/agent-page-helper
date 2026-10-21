@@ -1,11 +1,59 @@
 {
   "name": "agent-page-helper",
   "version": "0.1.0",
-  "description": "Page-side helper for LLM browser agents",
+  "description": "Page-side snapshots and DOM actions for LLM browser agents: element refs, controlled-input fill, occlusion checks, frames",
   "license": "MIT",
-  "author": "Jay Cho",
-  "main": "lib/upload.js",
+  "author": "Jay Cho (https://github.com/Jayyo)",
+  "homepage": "https://github.com/Jayyo/agent-page-helper#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Jayyo/agent-page-helper.git"
+  },
+  "bugs": "https://github.com/Jayyo/agent-page-helper/issues",
+  "keywords": [
+    "browser-automation",
+    "llm",
+    "agent",
+    "playwright",
+    "cdp",
+    "userscript",
+    "dom",
+    "snapshot"
+  ],
+  "main": "index.js",
+  "types": "index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./index.d.ts",
+      "default": "./index.js"
+    },
+    "./playwright": {
+      "types": "./playwright.d.ts",
+      "default": "./playwright.js"
+    },
+    "./agent-page-helper.user.js": "./agent-page-helper.user.js",
+    "./package.json": "./package.json"
+  },
   "bin": {
     "cdp-probe": "bin/cdp-probe.js"
+  },
+  "files": [
+    "agent-page-helper.user.js",
+    "index.js",
+    "index.d.ts",
+    "playwright.js",
+    "playwright.d.ts",
+    "bin/"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "peerDependencies": {
+    "playwright-core": ">=1.51"
+  },
+  "peerDependenciesMeta": {
+    "playwright-core": {
+      "optional": true
+    }
   }
 }
