@@ -1,0 +1,1094 @@
+{
+  "env": {
+    "date": "2026-10-22",
+    "chromium": "156.0.8078.4",
+    "playwright": "1.64.1",
+    "node": "22.22.1",
+    "os": "Linux 6.14.0-37-generic",
+    "viewport": "1280x800",
+    "locale": "en-US",
+    "tokenizer": "js-tiktoken o200k_base",
+    "helper": "0.1.0",
+    "commit": "f46f94e",
+    "runs": 3
+  },
+  "sizes": [
+    {
+      "name": "react-controlled",
+      "kind": "fixture",
+      "url": "http://127.0.0.1:44219/react-controlled.html",
+      "finalUrl": "http://127.0.0.1:44219/react-controlled.html",
+      "found": 4,
+      "listed": 4,
+      "aiRefs": 10,
+      "agreement": {
+        "aiInteractive": 4,
+        "helperInteractive": 4,
+        "both": 4
+      },
+      "aria": {
+        "tokens": 102,
+        "chars": 353,
+        "ms": 2
+      },
+      "ai": {
+        "tokens": 152,
+        "chars": 469,
+        "ms": 2
+      },
+      "text": {
+        "tokens": 103,
+        "chars": 367,
+        "ms": 1
+      },
+      "json": {
+        "tokens": 190,
+        "chars": 686,
+        "ms": 1
+      },
+      "textAll": {
+        "tokens": 103,
+        "chars": 367,
+        "ms": 1
+      },
+      "targets": 4,
+      "present": {
+        "aria": 4,
+        "ai": 4,
+        "text": 4,
+        "textAll": 4
+      }
+    },
+    {
+      "name": "nested-frames",
+      "kind": "fixture",
+      "url": "http://127.0.0.1:44219/nested-frames.html",
+      "finalUrl": "http://127.0.0.1:44219/nested-frames.html",
+      "found": 5,
+      "listed": 5,
+      "aiRefs": 16,
+      "agreement": {
+        "aiInteractive": 5,
+        "helperInteractive": 5,
+        "both": 5
+      },
+      "aria": {
+        "tokens": 24,
+        "chars": 76,
+        "ms": 2
+      },
+      "ai": {
+        "tokens": 241,
+        "chars": 752,
+        "ms": 6
+      },
+      "text": {
+        "tokens": 133,
+        "chars": 393,
+        "ms": 1
+      },
+      "json": {
+        "tokens": 315,
+        "chars": 993,
+        "ms": 1
+      },
+      "textAll": {
+        "tokens": 133,
+        "chars": 393,
+        "ms": 1
+      },
+      "targets": 5,
+      "present": {
+        "aria": 0,
+        "ai": 5,
+        "text": 5,
+        "textAll": 5
+      }
+    },
+    {
+      "name": "frameset",
+      "kind": "fixture",
+      "url": "http://127.0.0.1:44219/frameset.html",
+      "finalUrl": "http://127.0.0.1:44219/frameset.html",
+      "found": 5,
+      "listed": 5,
+      "aiRefs": 17,
+      "agreement": {
+        "aiInteractive": 5,
+        "helperInteractive": 5,
+        "both": 5
+      },
+      "aria": {
+        "tokens": 5,
+        "chars": 17,
+        "ms": 2
+      },
+      "ai": {
+        "tokens": 274,
+        "chars": 813,
+        "ms": 5
+      },
+      "text": {
+        "tokens": 122,
+        "chars": 334,
+        "ms": 1
+      },
+      "json": {
+        "tokens": 372,
+        "chars": 1094,
+        "ms": 1
+      },
+      "textAll": {
+        "tokens": 122,
+        "chars": 334,
+        "ms": 1
+      },
+      "targets": 5,
+      "present": {
+        "aria": 0,
+        "ai": 5,
+        "text": 5,
+        "textAll": 5
+      }
+    },
+    {
+      "name": "shadow",
+      "kind": "fixture",
+      "url": "http://127.0.0.1:44219/shadow.html",
+      "finalUrl": "http://127.0.0.1:44219/shadow.html",
+      "found": 2,
+      "listed": 2,
+      "aiRefs": 5,
+      "agreement": {
+        "aiInteractive": 2,
+        "helperInteractive": 2,
+        "both": 2
+      },
+      "aria": {
+        "tokens": 29,
+        "chars": 104,
+        "ms": 2
+      },
+      "ai": {
+        "tokens": 67,
+        "chars": 200,
+        "ms": 1
+      },
+      "text": {
+        "tokens": 53,
+        "chars": 158,
+        "ms": 1
+      },
+      "json": {
+        "tokens": 118,
+        "chars": 391,
+        "ms": 1
+      },
+      "textAll": {
+        "tokens": 53,
+        "chars": 158,
+        "ms": 1
+      },
+      "targets": 4,
+      "present": {
+        "aria": 2,
+        "ai": 2,
+        "text": 2,
+        "textAll": 2
+      }
+    },
+    {
+      "name": "cross-origin",
+      "kind": "fixture",
+      "url": "http://127.0.0.1:44219/cross-origin.html",
+      "finalUrl": "http://127.0.0.1:44219/cross-origin.html",
+      "found": 0,
+      "listed": 0,
+      "aiRefs": 7,
+      "agreement": {
+        "aiInteractive": 2,
+        "helperInteractive": 0,
+        "both": 0
+      },
+      "aria": {
+        "tokens": 26,
+        "chars": 115,
+        "ms": 1
+      },
+      "ai": {
+        "tokens": 100,
+        "chars": 320,
+        "ms": 4
+      },
+      "text": {
+        "tokens": 71,
+        "chars": 264,
+        "ms": 1
+      },
+      "json": {
+        "tokens": 134,
+        "chars": 465,
+        "ms": 1
+      },
+      "textAll": {
+        "tokens": 71,
+        "chars": 264,
+        "ms": 0
+      },
+      "targets": 2,
+      "present": {
+        "aria": 0,
+        "ai": 2,
+        "text": 0,
+        "textAll": 0
+      }
+    },
+    {
+      "name": "occluded",
+      "kind": "fixture",
+      "url": "http://127.0.0.1:44219/occluded.html",
+      "finalUrl": "http://127.0.0.1:44219/occluded.html",
+      "found": 3,
+      "listed": 3,
+      "aiRefs": 8,
+      "agreement": {
+        "aiInteractive": 3,
+        "helperInteractive": 3,
+        "both": 3
+      },
+      "aria": {
+        "tokens": 52,
+        "chars": 196,
+        "ms": 1
+      },
+      "ai": {
+        "tokens": 105,
+        "chars": 322,
+        "ms": 1
+      },
+      "text": {
+        "tokens": 93,
+        "chars": 315,
+        "ms": 1
+      },
+      "json": {
+        "tokens": 173,
+        "chars": 604,
+        "ms": 1
+      },
+      "textAll": {
+        "tokens": 93,
+        "chars": 315,
+        "ms": 0
+      },
+      "targets": 3,
+      "present": {
+        "aria": 3,
+        "ai": 3,
+        "text": 3,
+        "textAll": 3
+      }
+    },
+    {
+      "name": "upload",
+      "kind": "fixture",
+      "url": "http://127.0.0.1:44219/upload.html",
+      "finalUrl": "http://127.0.0.1:44219/upload.html",
+      "found": 2,
+      "listed": 2,
+      "aiRefs": 6,
+      "agreement": {
+        "aiInteractive": 2,
+        "helperInteractive": 2,
+        "both": 2
+      },
+      "aria": {
+        "tokens": 30,
+        "chars": 105,
+        "ms": 1
+      },
+      "ai": {
+        "tokens": 71,
+        "chars": 206,
+        "ms": 2
+      },
+      "text": {
+        "tokens": 55,
+        "chars": 180,
+        "ms": 1
+      },
+      "json": {
+        "tokens": 119,
+        "chars": 409,
+        "ms": 1
+      },
+      "textAll": {
+        "tokens": 55,
+        "chars": 180,
+        "ms": 1
+      },
+      "targets": 2,
+      "present": {
+        "aria": 2,
+        "ai": 2,
+        "text": 2,
+        "textAll": 2
+      }
+    },
+    {
+      "name": "forms",
+      "kind": "fixture",
+      "url": "http://127.0.0.1:44219/forms.html",
+      "finalUrl": "http://127.0.0.1:44219/forms.html",
+      "found": 18,
+      "listed": 18,
+      "aiRefs": 41,
+      "agreement": {
+        "aiInteractive": 17,
+        "helperInteractive": 17,
+        "both": 17
+      },
+      "aria": {
+        "tokens": 269,
+        "chars": 865,
+        "ms": 3
+      },
+      "ai": {
+        "tokens": 505,
+        "chars": 1575,
+        "ms": 2
+      },
+      "text": {
+        "tokens": 299,
+        "chars": 969,
+        "ms": 1
+      },
+      "json": {
+        "tokens": 542,
+        "chars": 1931,
+        "ms": 2
+      },
+      "textAll": {
+        "tokens": 299,
+        "chars": 969,
+        "ms": 1
+      },
+      "targets": 16,
+      "present": {
+        "aria": 16,
+        "ai": 16,
+        "text": 16,
+        "textAll": 16
+      }
+    },
+    {
+      "name": "long-noisy",
+      "kind": "fixture",
+      "url": "http://127.0.0.1:44219/long-noisy.html",
+      "finalUrl": "http://127.0.0.1:44219/long-noisy.html",
+      "found": 198,
+      "listed": 100,
+      "aiRefs": 360,
+      "agreement": {
+        "aiInteractive": 158,
+        "helperInteractive": 158,
+        "both": 158
+      },
+      "aria": {
+        "tokens": 5271,
+        "chars": 27024,
+        "ms": 12
+      },
+      "ai": {
+        "tokens": 7764,
+        "chars": 35565,
+        "ms": 16
+      },
+      "text": {
+        "tokens": 1679,
+        "chars": 6233,
+        "ms": 3
+      },
+      "json": {
+        "tokens": 3587,
+        "chars": 12607,
+        "ms": 7
+      },
+      "textAll": {
+        "tokens": 2578,
+        "chars": 8880,
+        "ms": 3
+      },
+      "targets": 8,
+      "present": {
+        "aria": 7,
+        "ai": 8,
+        "text": 5,
+        "textAll": 8
+      }
+    },
+    {
+      "name": "wikipedia-article",
+      "kind": "live",
+      "url": "https://en.wikipedia.org/wiki/Web_browser",
+      "finalUrl": "https://en.wikipedia.org/wiki/Web_browser",
+      "found": 512,
+      "listed": 100,
+      "aiRefs": 993,
+      "agreement": {
+        "aiInteractive": 508,
+        "helperInteractive": 508,
+        "both": 504
+      },
+      "aria": {
+        "tokens": 19913,
+        "chars": 74707,
+        "ms": 43
+      },
+      "ai": {
+        "tokens": 35693,
+        "chars": 134983,
+        "ms": 76
+      },
+      "text": {
+        "tokens": 1196,
+        "chars": 3631,
+        "ms": 10
+      },
+      "json": {
+        "tokens": 3392,
+        "chars": 12774,
+        "ms": 12
+      },
+      "textAll": {
+        "tokens": 5584,
+        "chars": 16151,
+        "ms": 13
+      }
+    },
+    {
+      "name": "hacker-news",
+      "kind": "live",
+      "url": "https://news.ycombinator.com/",
+      "finalUrl": "https://news.ycombinator.com/",
+      "found": 228,
+      "listed": 100,
+      "aiRefs": 616,
+      "agreement": {
+        "aiInteractive": 228,
+        "helperInteractive": 228,
+        "both": 228
+      },
+      "aria": {
+        "tokens": 10029,
+        "chars": 40453,
+        "ms": 26
+      },
+      "ai": {
+        "tokens": 12296,
+        "chars": 47667,
+        "ms": 30
+      },
+      "text": {
+        "tokens": 1230,
+        "chars": 3624,
+        "ms": 4
+      },
+      "json": {
+        "tokens": 4185,
+        "chars": 13586,
+        "ms": 7
+      },
+      "textAll": {
+        "tokens": 2557,
+        "chars": 7587,
+        "ms": 4
+      }
+    },
+    {
+      "name": "mdn-input",
+      "kind": "live",
+      "url": "https://developer.mozilla.org/en-US/docs/Web/HTML/Reference/Elements/input",
+      "finalUrl": "https://developer.mozilla.org/en-US/docs/Web/HTML/Reference/Elements/input",
+      "found": 1675,
+      "listed": 100,
+      "aiRefs": 8100,
+      "agreement": {
+        "aiInteractive": 1694,
+        "helperInteractive": 1674,
+        "both": 1611
+      },
+      "aria": {
+        "tokens": 72342,
+        "chars": 290292,
+        "ms": 343
+      },
+      "ai": {
+        "tokens": 149800,
+        "chars": 613654,
+        "ms": 531
+      },
+      "text": {
+        "tokens": 2868,
+        "chars": 8518,
+        "ms": 39
+      },
+      "json": {
+        "tokens": 7712,
+        "chars": 24324,
+        "ms": 40
+      },
+      "textAll": {
+        "tokens": 19167,
+        "chars": 57819,
+        "ms": 64
+      }
+    },
+    {
+      "name": "github-repo",
+      "kind": "live",
+      "url": "https://github.com/microsoft/playwright",
+      "finalUrl": "https://github.com/microsoft/playwright",
+      "found": 281,
+      "listed": 100,
+      "aiRefs": 858,
+      "agreement": {
+        "aiInteractive": 280,
+        "helperInteractive": 280,
+        "both": 279
+      },
+      "aria": {
+        "tokens": 13512,
+        "chars": 47191,
+        "ms": 40
+      },
+      "ai": {
+        "tokens": 18126,
+        "chars": 72609,
+        "ms": 60
+      },
+      "text": {
+        "tokens": 1801,
+        "chars": 5500,
+        "ms": 13
+      },
+      "json": {
+        "tokens": 4752,
+        "chars": 16291,
+        "ms": 16
+      },
+      "textAll": {
+        "tokens": 3966,
+        "chars": 11884,
+        "ms": 13
+      }
+    },
+    {
+      "name": "python-docs",
+      "kind": "live",
+      "url": "https://docs.python.org/3/library/json.html",
+      "finalUrl": "https://docs.python.org/3/library/json.html",
+      "found": 173,
+      "listed": 100,
+      "aiRefs": 1224,
+      "agreement": {
+        "aiInteractive": 172,
+        "helperInteractive": 170,
+        "both": 170
+      },
+      "aria": {
+        "tokens": 16096,
+        "chars": 62623,
+        "ms": 42
+      },
+      "ai": {
+        "tokens": 23034,
+        "chars": 100515,
+        "ms": 59
+      },
+      "text": {
+        "tokens": 1354,
+        "chars": 4094,
+        "ms": 6
+      },
+      "json": {
+        "tokens": 4042,
+        "chars": 14633,
+        "ms": 10
+      },
+      "textAll": {
+        "tokens": 2091,
+        "chars": 6068,
+        "ms": 6
+      }
+    },
+    {
+      "name": "gov-uk",
+      "kind": "live",
+      "url": "https://www.gov.uk/",
+      "finalUrl": "https://www.gov.uk/",
+      "found": 88,
+      "listed": 88,
+      "aiRefs": 311,
+      "agreement": {
+        "aiInteractive": 88,
+        "helperInteractive": 88,
+        "both": 88
+      },
+      "aria": {
+        "tokens": 3214,
+        "chars": 12393,
+        "ms": 11
+      },
+      "ai": {
+        "tokens": 5151,
+        "chars": 20747,
+        "ms": 16
+      },
+      "text": {
+        "tokens": 1471,
+        "chars": 4997,
+        "ms": 3
+      },
+      "json": {
+        "tokens": 3673,
+        "chars": 13584,
+        "ms": 7
+      },
+      "textAll": {
+        "tokens": 1471,
+        "chars": 4997,
+        "ms": 3
+      }
+    },
+    {
+      "name": "w3c-apg-combobox",
+      "kind": "live",
+      "url": "https://www.w3.org/WAI/ARIA/apg/patterns/combobox/examples/combobox-autocomplete-list/",
+      "finalUrl": "https://www.w3.org/WAI/ARIA/apg/patterns/combobox/examples/combobox-autocomplete-list/",
+      "found": 59,
+      "listed": 59,
+      "aiRefs": 582,
+      "agreement": {
+        "aiInteractive": 57,
+        "helperInteractive": 58,
+        "both": 57
+      },
+      "aria": {
+        "tokens": 8550,
+        "chars": 35213,
+        "ms": 25
+      },
+      "ai": {
+        "tokens": 10788,
+        "chars": 45469,
+        "ms": 34
+      },
+      "text": {
+        "tokens": 989,
+        "chars": 3283,
+        "ms": 4
+      },
+      "json": {
+        "tokens": 2942,
+        "chars": 9993,
+        "ms": 6
+      },
+      "textAll": {
+        "tokens": 989,
+        "chars": 3283,
+        "ms": 4
+      }
+    },
+    {
+      "name": "bbc-news",
+      "kind": "live",
+      "url": "https://www.bbc.com/news",
+      "finalUrl": "https://www.bbc.com/news",
+      "found": 114,
+      "listed": 100,
+      "aiRefs": 486,
+      "agreement": {
+        "aiInteractive": 118,
+        "helperInteractive": 114,
+        "both": 109
+      },
+      "aria": {
+        "tokens": 8044,
+        "chars": 32019,
+        "ms": 20
+      },
+      "ai": {
+        "tokens": 11076,
+        "chars": 45553,
+        "ms": 29
+      },
+      "text": {
+        "tokens": 2419,
+        "chars": 8625,
+        "ms": 5
+      },
+      "json": {
+        "tokens": 5210,
+        "chars": 18329,
+        "ms": 9
+      },
+      "textAll": {
+        "tokens": 2555,
+        "chars": 9028,
+        "ms": 4
+      }
+    },
+    {
+      "name": "react-docs",
+      "kind": "live",
+      "url": "https://react.dev/learn",
+      "finalUrl": "https://react.dev/learn",
+      "found": 98,
+      "listed": 98,
+      "aiRefs": 527,
+      "agreement": {
+        "aiInteractive": 109,
+        "helperInteractive": 97,
+        "both": 97
+      },
+      "aria": {
+        "tokens": 6677,
+        "chars": 25422,
+        "ms": 36
+      },
+      "ai": {
+        "tokens": 10255,
+        "chars": 46609,
+        "ms": 51
+      },
+      "text": {
+        "tokens": 1289,
+        "chars": 3959,
+        "ms": 6
+      },
+      "json": {
+        "tokens": 3290,
+        "chars": 11828,
+        "ms": 9
+      },
+      "textAll": {
+        "tokens": 1289,
+        "chars": 3959,
+        "ms": 6
+      }
+    },
+    {
+      "name": "naver",
+      "kind": "live",
+      "url": "https://www.naver.com/",
+      "finalUrl": "https://www.naver.com/",
+      "found": 166,
+      "listed": 100,
+      "aiRefs": 590,
+      "agreement": {
+        "aiInteractive": 170,
+        "helperInteractive": 166,
+        "both": 166
+      },
+      "aria": {
+        "tokens": 6788,
+        "chars": 17844,
+        "ms": 21
+      },
+      "ai": {
+        "tokens": 14590,
+        "chars": 44021,
+        "ms": 49
+      },
+      "text": {
+        "tokens": 1995,
+        "chars": 4092,
+        "ms": 12
+      },
+      "json": {
+        "tokens": 4659,
+        "chars": 13140,
+        "ms": 15
+      },
+      "textAll": {
+        "tokens": 3353,
+        "chars": 6518,
+        "ms": 12
+      }
+    }
+  ],
+  "tasks": [
+    {
+      "id": "react",
+      "title": "React 18 controlled input: fill email, submit",
+      "results": {
+        "dom": {
+          "passed": 0,
+          "runs": 3,
+          "ms": 5,
+          "error": "submitted, but React state still has the old value"
+        },
+        "helper": {
+          "passed": 3,
+          "runs": 3,
+          "ms": 10
+        },
+        "helper/frames": {
+          "passed": 3,
+          "runs": 3,
+          "ms": 9
+        },
+        "playwright": {
+          "passed": 3,
+          "runs": 3,
+          "ms": 62
+        }
+      }
+    },
+    {
+      "id": "frames",
+      "title": "Coupon field two same-origin iframes deep",
+      "results": {
+        "dom": {
+          "passed": 0,
+          "runs": 3,
+          "ms": 3,
+          "error": "page.evaluate: Error: no field labelled \"Coupon code\" in document"
+        },
+        "helper": {
+          "passed": 3,
+          "runs": 3,
+          "ms": 16
+        },
+        "helper/frames": {
+          "passed": 3,
+          "runs": 3,
+          "ms": 8
+        },
+        "playwright": {
+          "passed": 3,
+          "runs": 3,
+          "ms": 145
+        }
+      }
+    },
+    {
+      "id": "frameset",
+      "title": "Checkbox and button inside a <frameset> page",
+      "results": {
+        "dom": {
+          "passed": 0,
+          "runs": 3,
+          "ms": 4,
+          "error": "page.evaluate: Error: no checkbox labelled \"I have read this lesson\" in document"
+        },
+        "helper": {
+          "passed": 3,
+          "runs": 3,
+          "ms": 12
+        },
+        "helper/frames": {
+          "passed": 3,
+          "runs": 3,
+          "ms": 10
+        },
+        "playwright": {
+          "passed": 3,
+          "runs": 3,
+          "ms": 133
+        }
+      }
+    },
+    {
+      "id": "shadow-open",
+      "title": "Field inside an open shadow root",
+      "results": {
+        "dom": {
+          "passed": 0,
+          "runs": 3,
+          "ms": 4,
+          "error": "page.evaluate: Error: no field labelled \"Work email\" in document"
+        },
+        "helper": {
+          "passed": 3,
+          "runs": 3,
+          "ms": 10
+        },
+        "helper/frames": {
+          "passed": 3,
+          "runs": 3,
+          "ms": 10
+        },
+        "playwright": {
+          "passed": 3,
+          "runs": 3,
+          "ms": 57
+        }
+      }
+    },
+    {
+      "id": "shadow-closed",
+      "title": "Field inside a closed shadow root",
+      "results": {
+        "dom": {
+          "passed": 0,
+          "runs": 3,
+          "ms": 4,
+          "error": "page.evaluate: Error: no field labelled \"Personal email\" in document"
+        },
+        "helper": {
+          "passed": 0,
+          "runs": 3,
+          "ms": 6,
+          "error": "textbox \"Personal email\" is not in the helper snapshot"
+        },
+        "helper/frames": {
+          "passed": 0,
+          "runs": 3,
+          "ms": 6,
+          "error": "textbox \"Personal email\" not found in any frame"
+        },
+        "playwright": {
+          "passed": 0,
+          "runs": 3,
+          "ms": 21,
+          "error": "textbox \"Personal email\" is not in the AI snapshot"
+        }
+      }
+    },
+    {
+      "id": "cross-origin",
+      "title": "Coupon field in a cross-origin iframe",
+      "results": {
+        "dom": {
+          "passed": 0,
+          "runs": 3,
+          "ms": 3,
+          "error": "page.evaluate: Error: no field labelled \"Coupon code\" in document"
+        },
+        "helper": {
+          "passed": 0,
+          "runs": 3,
+          "ms": 7,
+          "error": "textbox \"Coupon code\" is not in the helper snapshot"
+        },
+        "helper/frames": {
+          "passed": 3,
+          "runs": 3,
+          "ms": 12
+        },
+        "playwright": {
+          "passed": 3,
+          "runs": 3,
+          "ms": 103
+        }
+      }
+    },
+    {
+      "id": "occluded",
+      "title": "Save button under a cookie banner (dismiss first, then save)",
+      "results": {
+        "dom": {
+          "passed": 0,
+          "runs": 3,
+          "ms": 3,
+          "error": "Save fired through the banner"
+        },
+        "helper": {
+          "passed": 3,
+          "runs": 3,
+          "ms": 10
+        },
+        "playwright": {
+          "passed": 3,
+          "runs": 3,
+          "ms": 2074
+        }
+      }
+    },
+    {
+      "id": "upload-chooser",
+      "title": "Upload: button adds an input and opens the file dialog",
+      "results": {
+        "setInputFiles": {
+          "passed": 0,
+          "runs": 3,
+          "ms": 2000,
+          "error": "locator.setInputFiles: Timeout 2000ms exceeded."
+        },
+        "click + setInputFiles": {
+          "passed": 3,
+          "runs": 3,
+          "ms": 56
+        },
+        "waitForEvent(filechooser)": {
+          "passed": 3,
+          "runs": 3,
+          "ms": 45
+        },
+        "uploadFile": {
+          "passed": 3,
+          "runs": 3,
+          "ms": 214
+        }
+      }
+    },
+    {
+      "id": "upload-lazy",
+      "title": "Upload: button adds a hidden input, no dialog",
+      "results": {
+        "setInputFiles": {
+          "passed": 0,
+          "runs": 3,
+          "ms": 2000,
+          "error": "locator.setInputFiles: Timeout 2000ms exceeded."
+        },
+        "click + setInputFiles": {
+          "passed": 3,
+          "runs": 3,
+          "ms": 47
+        },
+        "waitForEvent(filechooser)": {
+          "passed": 0,
+          "runs": 3,
+          "ms": 2001,
+          "error": "page.waitForEvent: Timeout 2000ms exceeded while waiting for event \"filechooser\""
+        },
+        "uploadFile": {
+          "passed": 3,
+          "runs": 3,
+          "ms": 214
+        }
+      }
+    },
+    {
+      "id": "upload-detached",
+      "title": "Upload: dialog from an input never attached to the DOM",
+      "results": {
+        "setInputFiles": {
+          "passed": 0,
+          "runs": 3,
+          "ms": 2000,
+          "error": "locator.setInputFiles: Timeout 2000ms exceeded."
+        },
+        "click + setInputFiles": {
+          "passed": 0,
+          "runs": 3,
+          "ms": 2041,
+          "error": "locator.setInputFiles: Timeout 2000ms exceeded."
+        },
+        "waitForEvent(filechooser)": {
+          "passed": 3,
+          "runs": 3,
+          "ms": 53
+        },
+        "uploadFile": {
+          "passed": 3,
+          "runs": 3,
+          "ms": 132
+        }
+      }
+    }
+  ]
+}
