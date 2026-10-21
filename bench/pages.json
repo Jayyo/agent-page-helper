@@ -1,0 +1,12 @@
+[
+  { "name": "wikipedia-article", "url": "https://en.wikipedia.org/wiki/Web_browser" },
+  { "name": "hacker-news", "url": "https://news.ycombinator.com/" },
+  { "name": "mdn-input", "url": "https://developer.mozilla.org/en-US/docs/Web/HTML/Reference/Elements/input" },
+  { "name": "github-repo", "url": "https://github.com/microsoft/playwright" },
+  { "name": "python-docs", "url": "https://docs.python.org/3/library/json.html" },
+  { "name": "gov-uk", "url": "https://www.gov.uk/" },
+  { "name": "w3c-apg-combobox", "url": "https://www.w3.org/WAI/ARIA/apg/patterns/combobox/examples/combobox-autocomplete-list/" },
+  { "name": "bbc-news", "url": "https://www.bbc.com/news" },
+  { "name": "react-docs", "url": "https://react.dev/learn" },
+  { "name": "naver", "url": "https://www.naver.com/" }
+]
