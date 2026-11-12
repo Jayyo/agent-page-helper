@@ -13,9 +13,11 @@ h1 "Profile settings"
 text: "Profile settings Display name Save changes We use cookies to keep you signed in. Accept all"
 ```
 
-The same file works as a userscript (Tampermonkey, Violentmonkey) and as a plain script for Playwright's `addInitScript`, a raw CDP session, or anything else that can run JavaScript in the page. The package also has two Node helpers that came out of the same daily use: `uploadFile()` for upload widgets that only create their file input when you click them, and `cdp-probe`, which reports page targets that no longer answer CDP.
+The same file works as a userscript (Tampermonkey, Violentmonkey) and as a plain script for Playwright's `addInitScript`, a raw CDP session, or anything else that can run JavaScript in the page. The package also has two Node helpers that came out of the same work: `uploadFile()` for upload widgets that only create their file input when you click them, and `cdp-probe`, which reports page targets that no longer answer CDP.
 
-Status: 0.1. It started as a userscript I use every day with browser agents; the API may still change.
+Status: 0.1. It started as a userscript that runs on every page in my browser; the API may still change.
+
+In June 2026 I went back through 56 of my browser-automation sessions; 16 had quietly looped, using 3.4 times the calls on average and 12 times at worst. That evening I started this helper for stale refs, React inputs that reset after a fill, and government sites built on WebSquare and Nexacro. `cdp-probe` came later, after a print-preview tab left open for 13 hours froze every attach until I closed it.
 
 ## When to use it
 
